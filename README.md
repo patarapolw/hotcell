@@ -1,0 +1,3 @@
+# hotcell
+
+HandsOnTable NoSQL Editor
