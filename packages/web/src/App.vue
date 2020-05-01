@@ -4,7 +4,7 @@
     ul(style="flex-grow: 1;")
       li(v-for="t in tables.filter(t => !t.startsWith('__'))" :class="t === tableName ? 'is-active' : ''"
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
-        a(role="button" @click="beforeChangeTable() ? tableName = t : null")
+        a(role="button" @click="beforeChangeTable(t)")
           CellEditor(:value="t" @finish-editing="renameTable($event, t)" type="input"
             :rules="getIdentifierRules('table', t)" :before-open="() => beforeChangeTable()"
             :manual="true" :marginless="true" :ref="'table.' + t")
@@ -14,12 +14,12 @@
             :rules="getIdentifierRules('table')" :before-open="() => beforeChangeTable()")
   nav.nav
     div(style="width: 600px;")
-      .file.has-name.is-fullwidth
+      .file.has-name.is-fullwidth(@click="openFile" @contextmenu.prevent="$refs.fileContext.open")
         label.file-label
           //- input.file-input(type="file" name="file")
           span.file-cta
             span.file-label Filename:
-          span.file-name {{filepath || 'Choose a file...'}}
+          span.file-name {{filepath || 'New file'}}
     div(style="flex-grow: 1;")
     .buttons
       button.button.is-outlined(
@@ -47,29 +47,29 @@
     table.table.is-striped.is-hoverable.is-bordered
       thead
         tr
-          th(v-for="c in columns.filter(c => c.field[0] !== '_')" :key="c.field")
-            .padded(v-if="c.type === 'primary'" style="text-align: right;") {{c.field}}
-            div(v-else @contextmenu.prevent="(evt) => { selectedField = c.field; $refs.colContext.open(evt) }")
-              CellEditor(v-model="c.field" @finish-editing="renameCol($event, c.field)" type="input"
-                :rules="getIdentifierRules('column', c.field)"
-                style="text-align: center;")
+          th(v-for="c in columns.filter(c => !c.name.startsWith('__'))" :key="c.name")
+            .padded(v-if="c.pk" style="text-align: right;") {{c.name}}
+            div(v-else @contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
+              CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
+                :rules="getIdentifierRules('column', c.name)"
+                :centered="true")
           th
             CellEditor(placeholder="+" @finish-editing="addCol($event)" type="input"
               :rules="getIdentifierRules('column')")
       tbody
         tr(v-for="d in data" :key="d.__id")
-          th(v-for="c in columns.filter(c => c.type === 'primary')" :key="c.field"
+          th(v-for="c in columns.filter(c => c.pk)" :key="c.name"
             @contextmenu.prevent="(evt) => { if(d.__id) { selectedRow = d; $refs.rowContext.open(evt) }}"
           )
-            .padded {{d[c.field]}}
-          td(v-for="c in columns.filter(c => c.type !== 'primary')" :key="c.field"
-            @contextmenu.prevent="(evt) => { selectedRow = d; selectedField = c.field; $refs.cellContext.open(evt) }"
+            .padded {{d[c.name]}}
+          td(v-for="c in columns.filter(c => !c.pk)" :key="c.name"
+            @contextmenu.prevent="(evt) => { selectedRow = d; selectedField = c.name; $refs.cellContext.open(evt) }"
           )
-            CellEditor(v-model="d[c.field]"
-              @finish-editing="onFinishEdit(d, c.field, $event)"
+            CellEditor(v-model="d[c.name]"
+              @finish-editing="onFinishEdit(d, c.name, $event)"
               type="textarea"
               :placeholder="d.__id ? '' : ' '"
-              :rules="getCellRules(dotProp.get(meta, 'col.' + c.field + '.type'))"
+              :rules="getCellRules(dotProp.get(meta, 'col.' + c.name + '.type'))"
             )
           td
             div
@@ -98,6 +98,9 @@
       .modal-card-body(style="height: 100px;")
       footer.modal-card-foot
         button.button(@click="isColSettingsModal = false") Close
+  contextmenu(ref="fileContext")
+    li
+      a(role="button" @click="filepath = ''") Create new file
   contextmenu(ref="tableContext")
     li
       a(role="button" @click="isTableSettingsModal = true") Settings
@@ -126,6 +129,7 @@ import dayjs from 'dayjs'
 
 import CellEditor from './components/CellEditor.vue'
 import { normalizeArray } from './assets/util'
+import { api } from './assets/api'
 
 @Component({
   components: {
@@ -134,17 +138,23 @@ import { normalizeArray } from './assets/util'
 })
 export default class App extends Vue {
   data: any[] = []
-  columns: any[] = []
+  columns: {
+    name: string
+    type: string
+    dflt_value: any
+    pk: number
+  }[] = []
 
   count = 0
   perPage = 10
   page = 1
+  sort = ''
 
   tableName = 'default'
   meta: any = {}
 
   newTableName = ''
-  tables: string[] = []
+  tables: string[] = ['default']
 
   selectedTable = ''
   selectedField = ''
@@ -161,6 +171,11 @@ export default class App extends Vue {
 
   filepath = ''
 
+  get q () {
+    const u = new URL(location.href)
+    return u.searchParams.get('q') || ''
+  }
+
   created () {
     this.init()
   }
@@ -168,7 +183,7 @@ export default class App extends Vue {
   getIdentifierRules (type: string, existing?: string) {
     return [
       ...(type === 'column' ? [
-        (v: string) => (v !== existing && this.columns.map(c0 => c0.field).includes(v)) ? 'Duplicate column name' : ''
+        (v: string) => (v !== existing && this.columns.map(c0 => c0.name).includes(v)) ? 'Duplicate column name' : ''
       ] : [
         (v: string) => (v !== existing && this.tables.includes(v)) ? 'Duplicate table name' : ''
       ]),
@@ -213,24 +228,70 @@ export default class App extends Vue {
     return []
   }
 
+  @Watch('filepath')
   async init () {
-    if (!this.tables.includes(this.tableName)) {
-      this.tables = [...this.tables, this.tableName]
-    }
-
     this.page = 1
     this.data = []
 
-    this.$nextTick(async () => {
-      this.data = []
-      this.columns = [
-        {
-          field: 'ROWID',
-          type: 'primary'
+    if (this.filepath) {
+      const r = await api.put('/api/file/open', {}, {
+        params: {
+          path: this.filepath
         }
-      ]
+      })
+
+      this.tables = r.data.tables
+      this.tableName = r.data.tables[0]
+      this.meta = r.data.meta
+    } else {
+      this.tables = ['default']
+      this.tableName = 'default'
+      this.meta = {}
+    }
+
+    this.page = 1
+    this.sort = ''
+
+    this.onPageChange()
+  }
+
+  @Watch('sort')
+  @Watch('page')
+  async onPageChange () {
+    if (this.filepath) {
+      const r = await api.post('/api/table/q', {
+        table: this.tableName,
+        q: this.q,
+        offset: (this.page - 1) * this.perPage,
+        limit: this.perPage,
+        sort: this.sort || undefined
+      })
+      const { result, count, columns } = r.data
+
+      this.count = count
+      this.data = result.map((r: any) => {
+        r.__id = nanoid()
+        return r
+      })
+      this.columns = columns
       this.addRow()
-    })
+    } else {
+      this.$nextTick(() => {
+        this.page = 1
+        this.count = 0
+        this.data = []
+        this.columns = [
+          {
+            name: 'ROWID',
+            type: 'INTEGER',
+            dflt_value: null,
+            pk: 1
+          }
+        ]
+
+        this.addRow()
+      })
+    }
   }
 
   addTable (name: string) {
@@ -251,9 +312,7 @@ export default class App extends Vue {
     this.tables = this.tables.filter(t => t === this.selectedTable)
   }
 
-  openSettingsTable () {}
-
-  beforeChangeTable () {
+  beforeChangeTable (t?: string) {
     if (Object.keys(this.editList).length > 0) {
       this.newTableName = name
       this.isCommitFirstModal = true
@@ -262,7 +321,9 @@ export default class App extends Vue {
     }
 
     this.newTableName = ''
-    this.onTableChange()
+    if (typeof t === 'string') {
+      this.tableName = t
+    }
 
     return true
   }
@@ -273,10 +334,11 @@ export default class App extends Vue {
       this.tables = [...this.tables, this.tableName]
     }
 
-    this.init()
+    this.page = 1
+    this.sort = ''
+    this.onPageChange()
   }
 
-  @Watch('page')
   addRow () {
     this.data.unshift({})
     this.$set(this, 'data', this.data)
@@ -295,7 +357,12 @@ export default class App extends Vue {
 
     this.columns = [
       ...this.columns,
-      { field: name }
+      {
+        name,
+        type: 'TEXT',
+        dflt_value: null,
+        pk: 0
+      }
     ]
 
     dotProp.set(this.editList, 'alter.addCol', { field: name })
@@ -308,8 +375,8 @@ export default class App extends Vue {
     }
 
     this.columns = this.columns.map(c => {
-      if (c.field === oldName) {
-        c.field = name
+      if (c.name === oldName) {
+        c.name = name
       }
 
       return c
@@ -340,10 +407,8 @@ export default class App extends Vue {
       return d1
     })
 
-    this.columns = this.columns.filter(c => c.field !== this.selectedField)
+    this.columns = this.columns.filter(c => c.name !== this.selectedField)
   }
-
-  openSettingsCol () {}
 
   setNull () {
     this.data = this.data.map(d => {
@@ -375,7 +440,7 @@ export default class App extends Vue {
         ]
         this.$set(this, 'data', this.data)
       }
-    } else {
+    } else if (row[field] !== data) {
       dotProp.set(this.editList, `update.${row.__id}.${field}`, data)
       this.$set(this, 'editList', this.editList)
       this.$set(this, 'data', this.data.map(d => {
@@ -395,6 +460,19 @@ export default class App extends Vue {
   clear () {
     this.$set(this, 'editList', {})
     this.init()
+  }
+
+  async openFile () {
+    const { remote } = await import('electron')
+    const r = await remote.dialog.showOpenDialog({
+      filters: [
+        { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+
+    this.filepath = (r.filePaths || [])[0] || ''
   }
 }
 </script>

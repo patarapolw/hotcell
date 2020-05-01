@@ -1,3 +1,3 @@
 # hotcell
 
-HandsOnTable NoSQL Editor
+Yet another SQLite Editor

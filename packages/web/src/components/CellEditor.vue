@@ -1,5 +1,5 @@
 <template lang="pug">
-.CellEditor
+.CellEditor(:style="{ 'justify-content': centered ? 'center' : '' }")
   .display(v-if="!isEditing"
     :class="marginless ? '' : 'has-margin'"
     role="button" @click="() => manual ? null : doEdit()"
@@ -32,6 +32,7 @@ export default class CellEditor extends Vue {
   @Prop({ default: () => () => true }) beforeOpen!: () => boolean
   @Prop() manual?: boolean
   @Prop() marginless?: boolean
+  @Prop() centered?: boolean
 
   isEditing = false
   wasEditing = false
@@ -49,6 +50,11 @@ export default class CellEditor extends Vue {
   }
 
   created () {
+    this.onValueChange()
+  }
+
+  @Watch('value')
+  onValueChange () {
     this.currentValue = this.value || ''
   }
 
@@ -68,6 +74,9 @@ export default class CellEditor extends Vue {
   @Watch('isEditing')
   onStartEditing () {
     if (this.isEditing) {
+      const el = this.$el as any
+      el.style.height = el.parentElement.clientHeight + 'px'
+
       this.$nextTick(() => {
         const input = this.$refs.input as any
         if (input) {
@@ -96,11 +105,15 @@ export default class CellEditor extends Vue {
 .CellEditor {
   display: flex;
   align-items: center;
-  justify-content: center;
   margin: 0 !important;
   padding: 0;
   width: 100%;
   height: 100%;
+
+  .field, input, textarea {
+    width: 100%;
+    height: 100%;
+  }
 
   .display.has-margin {
     padding: 0.5em;
