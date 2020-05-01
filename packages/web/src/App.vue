@@ -5,14 +5,14 @@
       li(v-for="t in tables.filter(t => !t.startsWith('__'))" :class="t === tableName ? 'is-active' : ''"
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
         a(role="button" @click="beforeChangeTable() ? tableName = t : null")
-          CellEditor(:value="t" @finish-editing="addTable($event)" type="input"
+          CellEditor(:value="t" @finish-editing="renameTable($event, t)" type="input"
             :rules="getIdentifierRules('table', t)" :before-open="() => beforeChangeTable()"
             :manual="true" :marginless="true" :ref="'table.' + t")
       li
         a(role="button")
           CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
             :rules="getIdentifierRules('table')" :before-open="() => beforeChangeTable()")
-  nav.nav(style="display: flex; flex-direction: row; justify-content: center;")
+  nav.nav
     div(style="width: 600px;")
       .file.has-name.is-fullwidth
         label.file-label
@@ -34,14 +34,15 @@
         @click="clear"
       )
         fontawesome(icon="times")
-    form.field
-      .control.has-icons-left
-        input.input(name="q")
-        span.icon.is-small.is-left
-          fontawesome(icon="search")
-    b-tooltip.center-vh(label="Please visit https://github.com/patarapolw/qsearch on how to search"
-      type="is-white" position="is-left" multilined)
-      fontawesome(icon="question" style="color: #ccc;")
+    .row-align
+      form.field(style="flex-grow: 1;")
+        .control.has-icons-left
+          input.input(name="q")
+          span.icon.is-small.is-left
+            fontawesome(icon="search")
+      b-tooltip.center-vh(label="Please visit https://github.com/patarapolw/qsearch on how to search"
+        type="is-white" position="is-left" multilined)
+        fontawesome(icon="question" style="color: #ccc;")
   .table-container
     table.table.is-striped.is-hoverable.is-bordered
       thead
@@ -241,7 +242,10 @@ export default class App extends Vue {
     this.tableName = name
   }
 
-  renameTable () {}
+  renameTable (newName: string, oldName: string) {
+    this.tables = this.tables.map(t => t === oldName ? newName : t)
+    this.tableName = newName
+  }
 
   deleteTable () {
     this.tables = this.tables.filter(t => t === this.selectedTable)
@@ -406,13 +410,43 @@ body {
 
   .nav {
     margin-bottom: 1em;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+
+    @media all and (max-width: 600px) {
+      flex-direction: column;
+
+      > * + * {
+        margin-top: 0.5em;
+      }
+    }
+
+    @media not all and (max-width: 600px) {
+      > * + * {
+        margin-left: 0.5em;
+      }
+    }
 
     * {
       margin-bottom: 0 !important;
     }
 
-    > * + * {
-      margin-left: 0.5em;
+    .buttons {
+      white-space: nowrap;
+      display: block;
+      align-self: center;
+    }
+
+    .row-align {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      word-break: keep-all;
+
+      > * + * {
+        margin-left: 0.5em;
+      }
     }
 
     .center-vh {
