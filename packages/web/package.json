@@ -11,14 +11,15 @@
     "@fortawesome/free-brands-svg-icons": "^5.13.0",
     "@fortawesome/free-solid-svg-icons": "^5.13.0",
     "@fortawesome/vue-fontawesome": "^0.1.9",
-    "@handsontable/vue": "^4.1.1",
     "@types/nanoid": "^2.1.0",
     "buefy": "^0.8.17",
     "core-js": "^3.6.4",
-    "handsontable": "^7.4.2",
+    "dayjs": "^1.8.26",
+    "dot-prop": "^5.2.0",
     "nanoid": "^3.1.3",
     "vue": "^2.6.11",
     "vue-class-component": "^7.2.3",
+    "vue-context": "^5.1.0",
     "vue-property-decorator": "^8.4.1"
   },
   "devDependencies": {

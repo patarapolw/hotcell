@@ -1,8 +1,10 @@
 import Vue from 'vue'
 
 import App from './App.vue'
+
 import './plugins/buefy'
 import './plugins/fontawesome'
+import './plugins/context'
 
 Vue.directive('clickoutside', {
   bind (el, binding, vnode: any) {
