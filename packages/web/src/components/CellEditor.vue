@@ -1,7 +1,8 @@
 <template lang="pug">
 .CellEditor
   .display(v-if="!isEditing"
-    role="button" @click="doEdit"
+    :class="marginless ? '' : 'has-margin'"
+    role="button" @click="() => manual ? null : doEdit()"
   )
     span(v-if="placeholder") {{typeof value === 'undefined' ? placeholder : currentValue}}
     i(v-else-if="[null, undefined].includes(value)") NULL
@@ -29,6 +30,8 @@ export default class CellEditor extends Vue {
   @Prop() type?: string
   @Prop({ default: () => [] }) rules!: ((value: string) => string)[]
   @Prop({ default: () => () => true }) beforeOpen!: () => boolean
+  @Prop() manual?: boolean
+  @Prop() marginless?: boolean
 
   isEditing = false
   wasEditing = false
@@ -99,7 +102,7 @@ export default class CellEditor extends Vue {
   width: 100%;
   height: 100%;
 
-  .display {
+  .display.has-margin {
     padding: 0.5em;
     min-width: 1em;
     min-height: 1em;

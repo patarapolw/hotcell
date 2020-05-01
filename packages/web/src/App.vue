@@ -2,16 +2,24 @@
 #App.container
   .tabs.is-boxed
     ul(style="flex-grow: 1;")
-      li(v-for="t in tables.filter(t => t.startsWith('__'))" :class="t === tableName ? 'is-active' : ''"
+      li(v-for="t in tables.filter(t => !t.startsWith('__'))" :class="t === tableName ? 'is-active' : ''"
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
-        a(role="button" @click="beforeChangeTable() && tableName = t")
-          CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
-            :rules="getIdentifierRules('table')" :before-open="() => beforeChangeTable()")
+        a(role="button" @click="beforeChangeTable() ? tableName = t : null")
+          CellEditor(:value="t" @finish-editing="addTable($event)" type="input"
+            :rules="getIdentifierRules('table', t)" :before-open="() => beforeChangeTable()"
+            :manual="true" :marginless="true" :ref="'table.' + t")
       li
         a(role="button")
           CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
             :rules="getIdentifierRules('table')" :before-open="() => beforeChangeTable()")
-  .nav-right(style="display: flex; flex-direction: row; justify-content: center;")
+  nav.nav(style="display: flex; flex-direction: row; justify-content: center;")
+    div(style="width: 600px;")
+      .file.has-name.is-fullwidth
+        label.file-label
+          //- input.file-input(type="file" name="file")
+          span.file-cta
+            span.file-label Filename:
+          span.file-name {{filepath || 'Choose a file...'}}
     div(style="flex-grow: 1;")
     .buttons
       button.button.is-outlined(
@@ -50,7 +58,7 @@
       tbody
         tr(v-for="d in data" :key="d.__id")
           th(v-for="c in columns.filter(c => c.type === 'primary')" :key="c.field"
-            @contextmenu.prevent="(evt) => { selectedRow = d; $refs.rowContext.open(evt) }"
+            @contextmenu.prevent="(evt) => { if(d.__id) { selectedRow = d; $refs.rowContext.open(evt) }}"
           )
             .padded {{d[c.field]}}
           td(v-for="c in columns.filter(c => c.type !== 'primary')" :key="c.field"
@@ -60,6 +68,7 @@
               @finish-editing="onFinishEdit(d, c.field, $event)"
               type="textarea"
               :placeholder="d.__id ? '' : ' '"
+              :rules="getCellRules(dotProp.get(meta, 'col.' + c.field + '.type'))"
             )
           td
             div
@@ -72,16 +81,32 @@
         button.button.is-success(@click="commit(); isCommitFirstModal = false") Commit
         button.button.is-warning(@click="clear(); isCommitFirstModal = false") Do not commit
         button.button(@click="isCommitFirstModal = false") Cancel
+  .modal(:style="{ display: isTableSettingsModal ? 'flex' : 'none'}")
+    .modal-background
+    .modal-card
+      header.modal-card-head
+        h2.modal-card-title Table settings
+      .modal-card-body(style="height: 100px;")
+      footer.modal-card-foot
+        button.button(@click="isTableSettingsModal = false") Close
+  .modal(:style="{ display: isColSettingsModal ? 'flex' : 'none'}")
+    .modal-background
+    .modal-card
+      header.modal-card-head
+        h2.modal-card-title Column settings
+      .modal-card-body(style="height: 100px;")
+      footer.modal-card-foot
+        button.button(@click="isColSettingsModal = false") Close
   contextmenu(ref="tableContext")
     li
-      a(role="button" @click="openSettingsTable") Settings
+      a(role="button" @click="isTableSettingsModal = true") Settings
     li
-      a(role="button" @click="renameTable") Rename
+      a(role="button" @click="normalizeArray($refs['table.' + selectedTable]).doEdit()") Rename
     li
       a(role="button" @click="deleteTable") Delete
   contextmenu(ref="colContext")
     li
-      a(role="button" @click="openSettingsCol") Settings
+      a(role="button" @click="isColSettingsModal = true") Settings
     li
       a(role="button" @click="deleteCol") Delete
   contextmenu(ref="rowContext")
@@ -99,6 +124,7 @@ import dotProp from 'dot-prop'
 import dayjs from 'dayjs'
 
 import CellEditor from './components/CellEditor.vue'
+import { normalizeArray } from './assets/util'
 
 @Component({
   components: {
@@ -114,16 +140,25 @@ export default class App extends Vue {
   page = 1
 
   tableName = 'default'
+  meta: any = {}
+
   newTableName = ''
-  selectedTable = ''
   tables: string[] = []
 
+  selectedTable = ''
   selectedField = ''
   selectedRow: any = {}
 
   editList: any = {}
 
   isCommitFirstModal = false
+  isTableSettingsModal = false
+  isColSettingsModal = false
+
+  dotProp = dotProp
+  normalizeArray = normalizeArray
+
+  filepath = ''
 
   created () {
     this.init()
@@ -136,8 +171,9 @@ export default class App extends Vue {
       ] : [
         (v: string) => (v !== existing && this.tables.includes(v)) ? 'Duplicate table name' : ''
       ]),
-      (v: string) => (!v || /^[A-Z][A-Z0-9]*$/i.test(v)) ? '' : `Invalid ${type} name`,
-      (v: string) => (!v || v.startsWith('__')) ? '' : `Invalid ${type} name`
+      (v: string) => (!v || /^[A-Z_][A-Z0-9_$]*$/i.test(v)) ? '' : `Invalid ${type} name`,
+      (v: string) => (/[A-Z]/.test(v)) ? 'Lowercase is preferred' : '',
+      (v: string) => (v && v.startsWith('__')) ? `Invalid ${type} name` : ''
     ]
   }
 
@@ -148,14 +184,11 @@ export default class App extends Vue {
       ]
     } else if (type === 'REAL') {
       return [
-        (v: string) => (!v || [
-          /^-?\d*\.\d+$/,
-          /^-?\d*\.\d+e-?\d+$/
-        ].some(r => r.test(v))) ? '' : `Not ${type}`
+        (v: string) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`
       ]
     } else if (type === 'date') {
       return [
-        (v: string) => (!v || /^-?\d+$/.test(v)) ? '' : `Not ${type}`,
+        (v: string) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`,
         (v: string) => (!v || dayjs(v).isValid()) ? '' : `Not ${type}`
       ]
     } else if (type === 'json') {
@@ -371,8 +404,22 @@ body {
 #App {
   padding-top: 1em;
 
-  .is-boxed li {
-    margin-bottom: -0.5em;
+  .nav {
+    margin-bottom: 1em;
+
+    * {
+      margin-bottom: 0 !important;
+    }
+
+    > * + * {
+      margin-left: 0.5em;
+    }
+
+    .center-vh {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
   }
 
   table.table {
@@ -394,23 +441,5 @@ body {
 
 [role="button"] {
   cursor: pointer;
-}
-
-.nav-right {
-  margin-bottom: 1em;
-
-  * {
-    margin-bottom: 0 !important;
-  }
-
-  > * + * {
-    margin-left: 0.5em;
-  }
-
-  .center-vh {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-  }
 }
 </style>
