@@ -1,4 +1,14 @@
+const { spawnSync } = require('child_process')
+const path = require('path')
+
 process.env.VUE_APP_PORT = process.env.PORT || '12345'
+
+if (process.env.NODE_ENV !== 'development') {
+  spawnSync('npm', ['run', 'build', '--', '--outDir', path.join(__dirname, './public/server')], {
+    stdio: 'inherit',
+    cwd: '../server'
+  })
+}
 
 module.exports = {
   devServer: {
@@ -9,10 +19,21 @@ module.exports = {
     },
     port: 8080
   },
-  configureWebpack: {
-    externals: {
-      electron: 'commonjs2 electron'
+  pluginOptions: {
+    electronBuilder: {
+      builderOptions: {
+        appId: 'dev.polvcode.hotcell',
+        productName: 'HotCell',
+        fileAssociations: [
+          {
+            ext: [
+              'sqlite',
+              'sqlite3',
+              'db'
+            ]
+          }
+        ]
+      }
     }
-  },
-  outputDir: process.env.OUT_DIR
+  }
 }

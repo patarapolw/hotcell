@@ -9,4 +9,4 @@ docker run --rm -ti \
   -v ~/.cache/electron:/root/.cache/electron \
   -v ~/.cache/electron-builder:/root/.cache/electron-builder \
   electronuserland/builder:wine \
-  ./install-and-build.sh
+  /bin/bash -c "npm run build -- -w"
