@@ -4,9 +4,9 @@
     :class="marginless ? '' : 'has-margin'"
     role="button" @click="() => manual ? null : doEdit()"
   )
-    span(v-if="placeholder") {{typeof value === 'undefined' ? placeholder : currentValue}}
-    i(v-else-if="[null, undefined].includes(value)") NULL
-    span(v-else) {{currentValue}}
+    span(v-if="placeholder") {{typeof value === 'undefined' ? placeholder : formattedValue}}
+    i(v-else-if="formattedValue === null") NULL
+    span(v-else) {{formattedValue}}
     slot(name="after")
   .field(v-else v-clickoutside="onClickOutside")
     component.input(
@@ -31,6 +31,7 @@ export default class CellEditor extends Vue {
   @Prop() type?: string
   @Prop({ default: () => [] }) rules!: ((value: string) => string)[]
   @Prop({ default: () => () => true }) beforeOpen!: () => boolean
+  @Prop({ default: () => (s: any) => s }) formatter!: (s: any) => string
   @Prop() manual?: boolean
   @Prop() marginless?: boolean
   @Prop() centered?: boolean
@@ -38,6 +39,15 @@ export default class CellEditor extends Vue {
   isEditing = false
   wasEditing = false
   currentValue = ''
+
+  get formattedValue () {
+    const v = this.formatter(this.value)
+    if (typeof v === 'undefined') {
+      return null
+    }
+
+    return v
+  }
 
   get invalidMessage () {
     for (const r of this.rules) {
@@ -116,10 +126,16 @@ export default class CellEditor extends Vue {
     height: 100%;
   }
 
-  .display.has-margin {
-    padding: 0.5em;
+  span, i {
+    min-height: 1em;
+    display: inline-block;
+  }
+
+  .display {
     min-width: 1em;
     min-height: 1em;
+    width: 100%;
+    height: 100%;
     max-width: 300px;
     max-height: 200px;
     overflow: scroll;
@@ -129,6 +145,10 @@ export default class CellEditor extends Vue {
     &:hover {
       color: blue;
     }
+  }
+
+  .display.has-margin {
+    padding: 0.5em;
   }
 }
 </style>

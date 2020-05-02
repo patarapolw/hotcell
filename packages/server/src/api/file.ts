@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify'
-import { getDb, closeDb, getMeta } from '../db/shared'
+import { getDb, closeDb, getDbMeta } from '../db/shared'
 
 export default (f: FastifyInstance, _: any, next: () => void) => {
   f.put('/open', {
@@ -25,7 +25,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
     }
   }, async (req) => {
     await getDb(req.query.path)
-    return await getMeta()
+    return await getDbMeta()
   })
 
   f.delete('/close', {

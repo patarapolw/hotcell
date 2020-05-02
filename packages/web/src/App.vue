@@ -4,19 +4,18 @@
     ul(style="flex-grow: 1;")
       li(v-for="t in tables.filter(t => !t.startsWith('__'))" :class="t === tableName ? 'is-active' : ''"
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
-        a(role="button" @click="beforeChangeTable(t)")
+        a(role="button" @click="changeTable(t)")
           CellEditor(:value="t" @finish-editing="renameTable($event, t)" type="input"
-            :rules="getIdentifierRules('table', t)" :before-open="() => beforeChangeTable()"
+            :rules="getIdentifierRules('table', t)" :before-open="checkCommit()"
             :manual="true" :marginless="true" :ref="'table.' + t")
       li
         a(role="button")
           CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
-            :rules="getIdentifierRules('table')" :before-open="() => beforeChangeTable()")
+            :rules="getIdentifierRules('table')" :before-open="checkCommit()")
   nav.nav
     div(style="width: 600px;")
       .file.has-name.is-fullwidth(@click="openFile" @contextmenu.prevent="$refs.fileContext.open")
         label.file-label
-          //- input.file-input(type="file" name="file")
           span.file-cta
             span.file-label Filename:
           span.file-name {{filepath || 'New file'}}
@@ -47,7 +46,7 @@
     table.table.is-striped.is-hoverable.is-bordered
       thead
         tr
-          th(v-for="c in columns.filter(c => !c.name.startsWith('__'))" :key="c.name")
+          th(v-for="c in tableMeta.column.filter(c => !c.name.startsWith('__'))" :key="c.name")
             .padded(v-if="c.pk" style="text-align: right;") {{c.name}}
             div(v-else @contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
               CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
@@ -66,7 +65,14 @@
           th(v-for="c in columns.filter(c => c.pk)" :key="c.name"
             @contextmenu.prevent="(evt) => { if(d.__id) { selectedRow = d; $refs.rowContext.open(evt) }}"
           )
-            .padded {{d[c.name]}}
+            .padded(v-if="c.name === 'ROWID'") {{d[c.name]}}
+            CellEditor(v-model="d[c.name]"
+              @finish-editing="onFinishEdit(d, c.name, $event)"
+              type="textarea"
+              :placeholder="d.__id ? '' : ' '"
+              :rules="getCellRules(c.name)"
+              :formatter="getCellFormatter(c.name)"
+            )
           td(v-for="c in columns.filter(c => !c.pk)" :key="c.name"
             @contextmenu.prevent="(evt) => { selectedRow = d; selectedField = c.name; $refs.cellContext.open(evt) }"
           )
@@ -74,7 +80,8 @@
               @finish-editing="onFinishEdit(d, c.name, $event)"
               type="textarea"
               :placeholder="d.__id ? '' : ' '"
-              :rules="getCellRules(dotProp.get(meta, 'col.' + c.name + '.type'))"
+              :rules="getCellRules(c.name)"
+              :formatter="getCellFormatter(c.name)"
             )
           td
             div
@@ -106,6 +113,8 @@
   contextmenu(ref="fileContext")
     li
       a(role="button" @click="filepath = ''") Create new file
+    li
+      a(role="button" @click="init()") Reload
   contextmenu(ref="tableContext")
     li
       a(role="button" @click="isTableSettingsModal = true") Settings
@@ -114,14 +123,76 @@
     li
       a(role="button" @click="deleteTable") Delete
   contextmenu(ref="colContext")
+    li.v-context__sub
+      a Sort
+      ul.v-context
+        li
+          a(role="button" @click="sort = [selectedField]") Sort ascending
+        li
+          a(role="button" @click="sort = ['-' + selectedField]") Sort descending
+        li
+          a(role="button" @click="sort.push(selectedField)") Sort ascending secondarily
+        li
+          a(role="button" @click="sort.push('-' + selectedField)") Sort descending secondarily
+    li.v-context__sub
+      a Data type
+      ul.v-context
+        li
+          a(
+            role="button"
+            @click="fieldType = 'TEXT'"
+            v-if="fieldType !== 'TEXT'"
+          ) TEXT
+        li
+          a(
+            role="button"
+            @click="fieldType = 'INTEGER'"
+            v-if="fieldType !== 'INTEGER'"
+          ) INTEGER
+        li
+          a(
+            role="button"
+            @click="fieldType = 'REAL'"
+            v-if="fieldType !== 'REAL'"
+          ) REAL
+        li
+          a(
+            role="button"
+            @click="fieldType = 'BLOB'"
+            v-if="fieldType !== 'BLOB'"
+          ) BLOB
+        li
+          a(
+            role="button"
+            @click="fieldType = 'date'"
+            v-if="fieldType !== 'date'"
+          ) date
+        li
+          a(
+            role="button"
+            @click="fieldType = 'json'"
+            v-if="fieldType !== 'json'"
+          ) json
+        li
+          a(
+            role="button"
+            @click="fieldType = 'boolean'"
+            v-if="fieldType !== 'boolean'"
+          ) boolean
+    li(v-if="selectedUnique !== null")
+      a(
+        role="button"
+        @click="selectedUnique = false"
+        v-if="!selectedUnique"
+      ) Set as UNIQUE
+      a(
+        role="button"
+        @click="selectedUnique = true"
+        v-else
+      ) Unset UNIQUE
     li
-      a(role="button" @click="sort = [selectedField]") Sort ascending
-    li
-      a(role="button" @click="sort = ['-' + selectedField]") Sort descending
-    li
-      a(role="button" @click="sort.push(selectedField)") Sort ascending secondarily
-    li
-      a(role="button" @click="sort.push('-' + selectedField)") Sort descending secondarily
+      a(role="button" v-if="!selectedPK" @click="selectedPK = true") Set as PRIMARY KEY
+      a(role="button" v-else @click="selectedPK = false") Unset PRIMARY KEY
     li
       a(role="button" @click="isColSettingsModal = true") Settings
     li
@@ -144,6 +215,15 @@ import CellEditor from './components/CellEditor.vue'
 import { normalizeArray } from './assets/util'
 import { api } from './assets/api'
 
+interface IColumn {
+  name: string
+  type: string
+  dflt_value: any
+  notnull: number
+  pk: number
+  xtype?: string
+}
+
 @Component({
   components: {
     CellEditor
@@ -151,12 +231,6 @@ import { api } from './assets/api'
 })
 export default class App extends Vue {
   data: any[] = []
-  columns: {
-    name: string
-    type: string
-    dflt_value: any
-    pk: number
-  }[] = []
 
   count = 0
   perPage = 10
@@ -164,9 +238,18 @@ export default class App extends Vue {
   sort: string[] = []
 
   tableName = 'default'
-  meta: any = {}
+  dbMeta: any = {}
+  tableMeta = {
+    column: [] as IColumn[],
+    index: [] as {
+      name: string
+      unique: number
+      info: {
+        name: string
+      }[]
+    }[]
+  }
 
-  newTableName = ''
   tables: string[] = ['default']
 
   selectedTable = ''
@@ -176,6 +259,8 @@ export default class App extends Vue {
   editList: any = {}
 
   isCommitFirstModal = false
+  afterCommitFn: (() => void) | null = null
+
   isTableSettingsModal = false
   isColSettingsModal = false
 
@@ -186,6 +271,111 @@ export default class App extends Vue {
   normalizeArray = normalizeArray
 
   filepath = ''
+
+  get columns (): IColumn[] {
+    return this.tableMeta.column
+  }
+
+  get selectedUnique (): boolean | null {
+    let unique: boolean | null = false
+
+    const index = this.tableMeta.index
+
+    index
+      .filter((idx) => idx.unique)
+      .map((idx) => idx.info.map((info: any) => info.name))
+      .map((names: string[]) => {
+        if (typeof unique === 'boolean' && names.includes(this.selectedField)) {
+          if (names.length > 1) {
+            unique = null
+          } else {
+            unique = true
+          }
+        }
+      })
+
+    return unique
+  }
+
+  set selectedUnique (type: boolean | null) {
+    let index = this.tableMeta.index
+
+    if (type) {
+      index.push({
+        name: `${this.selectedField}_unique_idx`,
+        unique: 1,
+        info: [{
+          name: this.selectedField
+        }]
+      })
+
+      dotProp.set(this.editList, `createIndex.${this.selectedField}_unique_idx`, {
+        name: [this.selectedField],
+        unique: true
+      })
+    } else {
+      index = index
+        .filter((idx) => {
+          if (idx.info[0].name === this.selectedField) {
+            dotProp.set(this.editList, `dropIndex.${idx.name}`, true)
+
+            return false
+          }
+
+          return true
+        })
+    }
+
+    this.$set(this.tableMeta, 'index', index)
+    this.$set(this, 'editList', this.editList)
+  }
+
+  get selectedPK () {
+    const c = this.tableMeta.column.filter((c) => c.name === this.selectedField && c.pk)[0]
+    return !!c
+  }
+
+  set selectedPK (type: boolean) {
+    const column = this.tableMeta.column
+    column.map((c: any) => {
+      if (c.name === this.selectedField) {
+        c.pk = type ? 1 : 0
+        dotProp.set(this.editList, `replaceTable.pk.${this.selectedField}`, type)
+      }
+    })
+
+    this.$set(this.tableMeta, 'column', column)
+    this.$set(this, 'editList', this.editList)
+  }
+
+  get fieldType () {
+    const c = (this.tableMeta.column || []).filter(c => c.name === this.selectedField)[0]
+    if (!c) {
+      return ''
+    }
+
+    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`)
+    return xtype || c.type
+  }
+
+  set fieldType (xtype: string) {
+    let type = xtype
+
+    if (type === xtype.toLocaleLowerCase()) {
+      if (type === 'boolean') {
+        type = 'INTEGER'
+      } else if (type === 'date') {
+        type = 'INTEGER'
+      } else {
+        type = 'TEXT'
+      }
+    }
+
+    dotProp.set(this.editList, `replaceTable.col.${this.selectedField}.type`, type)
+    dotProp.set(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`, xtype)
+
+    this.$set(this, 'editList', this.editList)
+  }
 
   created () {
     this.init()
@@ -204,22 +394,37 @@ export default class App extends Vue {
     ]
   }
 
-  getCellRules (type: string) {
-    if (type === 'INTEGER') {
-      return [
-        (v: string) => (!v || /^-?\d+$/.test(v)) ? '' : `Not ${type}`
-      ]
-    } else if (type === 'REAL') {
-      return [
-        (v: string) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`
-      ]
+  getCellRules (field: string) {
+    const c = this.tableMeta.column.filter(c => c.name === field)[0]
+    if (!c) {
+      return []
+    }
+
+    const rules: ((v: string) => string)[] = []
+
+    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
+    const type = xtype || c.type
+
+    /**
+     * https://www.sqlite.org/datatype3.html
+     *
+     * 3.1. Determination Of Column Affinity
+     */
+    if (type.includes('INT')) {
+      rules.push((v) => (!v || /^-?\d+$/.test(v)) ? '' : `Not ${type}`)
+    } else if (['CHAR', 'CLOB', 'TEXT'].some(t => type.includes(t))) {
+    } else if (type.includes('BLOB')) {
+    } else if (['REAL', 'FLOA', 'DOUB'].some(t => type.includes(t))) {
+      rules.push((v) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`)
+    } else if (type === 'boolean') {
+      rules.push((v) => (!v || v === '0' || v === '1') ? '' : `Not ${type}`)
     } else if (type === 'date') {
-      return [
-        (v: string) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`,
-        (v: string) => (!v || dayjs(v).isValid()) ? '' : `Not ${type}`
-      ]
+      rules.push(
+        (v) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`,
+        (v) => (!v || dayjs(v).isValid()) ? '' : `Not ${type}`
+      )
     } else if (type === 'json') {
-      return [
+      rules.push(
         (v: string) => {
           if (!v) {
             return ''
@@ -233,10 +438,57 @@ export default class App extends Vue {
 
           return ''
         }
-      ]
+      )
     }
 
-    return []
+    if (c.notnull && type !== 'TEXT') {
+      rules.push(
+        (v) => v ? '' : 'NULL is not allowed'
+      )
+    }
+
+    return rules
+  }
+
+  getCellFormatter (field: string) {
+    const c = this.tableMeta.column.filter(c => c.name === field)[0]
+    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
+    const type = xtype || (c || {}).type
+
+    if (type === 'json') {
+      return (s: any) => s ? JSON.stringify(s) : null
+    } else if (type === 'date') {
+      return (s: any) => s ? dayjs(s).toISOString() : null
+    } else if (type === 'boolean') {
+      return (s: any) => s ? s === '0' ? 'FALSE' : 'TRUE' : null
+    } else if (['REAL', 'FLOA', 'DOUB'].some(t => type.includes(t))) {
+      return (s: any) => {
+        if (s || s === 0) {
+          const f = parseFloat(s)
+          const sign = Math.sign(f)
+
+          if (sign === 0) {
+            return '0'
+          }
+
+          const [ch, man] = f.toExponential().split('e')
+          if (parseInt(man) < 1) {
+            if (ch.length > 4) {
+              return f.toPrecision(3)
+            }
+            return s
+          }
+
+          return (+f.toFixed(3)).toString()
+        }
+
+        return null
+      }
+    } else if (!['CHAR', 'CLOB', 'TEXT'].some(t => type.includes(t))) {
+      return (s: any) => s || null
+    }
+
+    return (s: any) => s
   }
 
   @Watch('q')
@@ -254,11 +506,11 @@ export default class App extends Vue {
 
       this.tables = r.data.tables
       this.tableName = r.data.tables[0]
-      this.meta = r.data.meta
+      this.$set(this, 'dbMeta', r.data.meta)
     } else {
       this.tables = ['default']
       this.tableName = 'default'
-      this.meta = {}
+      this.dbMeta = {}
     }
 
     this.page = 1
@@ -283,28 +535,31 @@ export default class App extends Vue {
         limit: this.perPage,
         sort: this.sort
       })
-      const { result, count, columns } = r.data
+      const { result, count, meta } = r.data
+      this.$set(this, 'tableMeta', r.data.meta)
 
       this.count = count
       this.data = result.map((r: any) => {
         r.__id = nanoid()
         return r
       })
-      this.columns = columns
+
       this.addRow()
     } else {
       this.$nextTick(() => {
         this.page = 1
         this.count = 0
         this.data = []
-        this.columns = [
+        this.tableMeta.column = [
           {
             name: 'ROWID',
             type: 'INTEGER',
             dflt_value: null,
-            pk: 1
+            pk: 1,
+            notnull: 0
           }
         ]
+        this.tableMeta.index = []
 
         this.addRow()
       })
@@ -316,30 +571,54 @@ export default class App extends Vue {
       return
     }
 
-    this.newTableName = ''
-    this.tableName = name
+    this.checkCommit(() => {
+      this.tableName = name
+    })
+  }
+
+  changeTable (name: string) {
+    this.checkCommit(() => {
+      this.tableName = name
+    })
   }
 
   renameTable (newName: string, oldName: string) {
-    this.tables = this.tables.map(t => t === oldName ? newName : t)
-    this.tableName = newName
+    if (this.tableName === oldName) {
+      this.checkCommit(() => {
+        this.tables = this.tables.map(t => t === oldName ? newName : t)
+        this.tableName = newName
+      })
+    } else {
+      this.tables = this.tables.map(t => t === oldName ? newName : t)
+    }
   }
 
-  deleteTable () {
-    this.tables = this.tables.filter(t => t === this.selectedTable)
+  async deleteTable () {
+    const r = await this.$buefy.dialog.confirm({
+      message: `Are you sure you want to delete table: ${this.selectedTable}?`,
+      type: 'is-danger',
+      hasIcon: true
+    })
+
+    if (r) {
+      this.tables = this.tables.filter(t => t !== this.selectedTable)
+
+      if (this.selectedTable === this.tableName) {
+        this.tableName = this.tables[0]
+      }
+    }
   }
 
-  beforeChangeTable (t?: string) {
+  checkCommit (cb?: () => void) {
     if (Object.keys(this.editList).length > 0) {
-      this.newTableName = name
+      this.afterCommitFn = cb || null
       this.isCommitFirstModal = true
 
       return false
     }
 
-    this.newTableName = ''
-    if (typeof t === 'string') {
-      this.tableName = t
+    if (cb) {
+      cb()
     }
 
     return true
@@ -357,14 +636,24 @@ export default class App extends Vue {
   }
 
   addRow () {
-    this.data.unshift({})
-    this.$set(this, 'data', this.data)
+    this.data = [
+      {},
+      ...this.data
+    ]
   }
 
-  deleteRow () {
-    this.data = this.data.filter(d => {
-      return d.__id !== this.selectedRow.__id
+  async deleteRow () {
+    const r = await this.$buefy.dialog.confirm({
+      message: 'Are you sure you want to delete this row?',
+      type: 'is-danger',
+      hasIcon: true
     })
+
+    if (r) {
+      this.data = this.data.filter(d => {
+        return d.__id !== this.selectedRow.__id
+      })
+    }
   }
 
   addCol (name: string) {
@@ -372,13 +661,14 @@ export default class App extends Vue {
       return
     }
 
-    this.columns = [
+    this.tableMeta.column = [
       ...this.columns,
       {
         name,
         type: 'TEXT',
         dflt_value: null,
-        pk: 0
+        pk: 0,
+        notnull: 0
       }
     ]
 
@@ -391,7 +681,7 @@ export default class App extends Vue {
       return
     }
 
-    this.columns = this.columns.map(c => {
+    this.tableMeta.column = this.columns.map(c => {
       if (c.name === oldName) {
         c.name = name
       }
@@ -412,19 +702,27 @@ export default class App extends Vue {
     })
   }
 
-  deleteCol () {
-    this.data = this.data.map(d => {
-      const d1: any = {}
-      Object.entries(d).map(([k, v]) => {
-        if (k !== this.selectedField) {
-          d1[k] = v
-        }
-      })
-
-      return d1
+  async deleteCol () {
+    const r = await this.$buefy.dialog.confirm({
+      message: `Are you sure you want to delete column: ${this.selectedField}?`,
+      type: 'is-danger',
+      hasIcon: true
     })
 
-    this.columns = this.columns.filter(c => c.name !== this.selectedField)
+    if (r) {
+      this.data = this.data.map(d => {
+        const d1: any = {}
+        Object.entries(d).map(([k, v]) => {
+          if (k !== this.selectedField) {
+            d1[k] = v
+          }
+        })
+
+        return d1
+      })
+
+      this.tableMeta.column = this.columns.filter(c => c.name !== this.selectedField)
+    }
   }
 
   setNull () {
@@ -479,17 +777,19 @@ export default class App extends Vue {
     this.init()
   }
 
-  async openFile () {
-    const { remote } = await import('electron')
-    const r = await remote.dialog.showOpenDialog({
-      filters: [
-        { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
-        { name: 'All Files', extensions: ['*'] }
-      ],
-      properties: ['openFile']
-    })
+  openFile () {
+    this.checkCommit(async () => {
+      const { remote } = await import('electron')
+      const r = await remote.dialog.showOpenDialog({
+        filters: [
+          { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+        properties: ['openFile']
+      })
 
-    this.filepath = (r.filePaths || [])[0] || ''
+      this.filepath = (r.filePaths || [])[0] || ''
+    })
   }
 }
 </script>
@@ -578,5 +878,9 @@ body {
 
 [role="button"] {
   cursor: pointer;
+}
+
+.v-context__sub > a:after {
+  content: "▶" !important;
 }
 </style>

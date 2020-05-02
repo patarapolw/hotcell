@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 import dotProp from 'dot-prop'
 import dayjs from 'dayjs'
 
-import { getDb, getMeta } from '../db/shared'
+import { getDb, getTableMeta } from '../db/shared'
 import { safeColumnName, SQLParams } from '../db/util'
 import { splitOp, ISplitOpToken } from '../db/shlex'
 
@@ -23,35 +23,18 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
           type: 'object',
           properties: {
             table: { type: 'string' },
-            columns: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  cid: { type: 'integer' },
-                  name: { type: 'string' },
-                  type: { type: 'string' },
-                  notnull: { type: 'integer' },
-                  dflt_value: {},
-                  pk: { type: 'integer' }
-                }
-              }
-            }
+            meta: {}
           }
         }
       }
     }
   }, async (req) => {
-    const db = await getDb()
     const { table } = req.query
-
-    const columns = await db.all(/*sql*/`
-    PRAGMA table_info(${safeColumnName(table)})
-    `)
+    const meta = await getTableMeta(table)
 
     return {
       table,
-      columns
+      meta
     }
   })
 
@@ -77,20 +60,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
           type: 'object',
           properties: {
             result: { type: 'array', items: {} },
-            columns: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  cid: { type: 'integer' },
-                  name: { type: 'string' },
-                  type: { type: 'string' },
-                  notnull: { type: 'integer' },
-                  dflt_value: {},
-                  pk: { type: 'integer' }
-                }
-              }
-            },
+            meta: {},
             count: { type: 'integer' }
           }
         }
@@ -100,17 +70,10 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
     const { table, q = '', where, offset = 0, limit = 10, sort = [], hasCount = true } = req.body
 
     const db = await getDb()
-    const { meta } = await getMeta()
+    const meta = await getTableMeta(table)
 
-    const columns: {
-      name: string
-      type: string
-    }[] = await db.all(/*sql*/`
-    PRAGMA table_info(${safeColumnName(table)})
-    `)
-
-    const strCols = columns.filter(c => c.type === 'TEXT').map(c => c.name)
-    const numCols = columns.filter(c => ['INTEGER', 'REAL'].includes(c.type)).map(c => c.name)
+    const strCols = meta.column.filter(c => c.type === 'TEXT').map(c => c.name)
+    const numCols = meta.column.filter(c => ['INTEGER', 'REAL'].includes(c.type)).map(c => c.name)
     const colTypes = dotProp.get<Record<string, { type: string }>>(meta, 'col', {})
 
     const p = new SQLParams()
@@ -189,7 +152,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
 
     return {
       result: rData,
-      columns,
+      meta,
       count: rCount
         ? rCount.count
         : hasCount ? 0 : undefined

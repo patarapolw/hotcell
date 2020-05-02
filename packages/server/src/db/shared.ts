@@ -1,5 +1,6 @@
 import { open, Database } from 'sqlite'
 import sqlite3 from 'sqlite3'
+import { safeColumnName } from './util'
 
 let db: Database | null = null
 
@@ -38,7 +39,7 @@ export async function closeDb (): Promise<void> {
   db = null
 }
 
-export async function getMeta () {
+export async function getDbMeta () {
   const db = await getDb()
 
   const tables: string[] = (await db.all(/*sql*/`
@@ -58,5 +59,40 @@ export async function getMeta () {
   return {
     tables,
     meta
+  }
+}
+
+export async function getTableMeta (name: string) {
+  const db = await getDb()
+
+  const column: {
+    name: string
+    type: string
+    notnull: number
+    dflt_value: any
+    pk: number
+  }[] = await db.all(/*sql*/`
+  PRAGMA table_info(${safeColumnName(name)})
+  `)
+
+  const index: {
+    name: string
+    unique: number
+    info: {
+      name: string
+    }[]
+  }[] = await db.all(/*sql*/`
+  PRAGMA index_list(${safeColumnName(name)})
+  `)
+
+  await Promise.all(index.map(async (idx) => {
+    idx.info = await db.all(/*sql*/`
+    PRAGMA index_info(${idx.name})
+    `)
+  }))
+
+  return {
+    column,
+    index
   }
 }
