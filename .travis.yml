@@ -19,7 +19,6 @@ cache:
     - $HOME/.cache/electron-builder
 
 script:
-  - cd packages/electron
   - |
     if [ "$TRAVIS_OS_NAME" == "linux" ]; then
       docker run --rm \
@@ -28,9 +27,9 @@ script:
         -v ~/.cache/electron:/root/.cache/electron \
         -v ~/.cache/electron-builder:/root/.cache/electron-builder \
         electronuserland/builder:wine \
-        /bin/bash -c "npm i && npm run build && npm run release"
+        /bin/bash -c "cd packages/electron && npm i && npm run build && npm run release"
     else
-      npm i && npm run build && npm run release
+      cd packages/electron && npm i && npm run build && npm run release
     fi
 before_cache:
   - rm -rf $HOME/.cache/electron-builder/wine
