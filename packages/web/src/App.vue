@@ -35,9 +35,9 @@
       )
         fontawesome(icon="times")
     .row-align
-      form.field(style="flex-grow: 1;")
+      .field(style="flex-grow: 1;")
         .control.has-icons-left
-          input.input(name="q")
+          input.input(v-model="qTmp" @keydown.enter="q = qTmp")
           span.icon.is-small.is-left
             fontawesome(icon="search")
       b-tooltip.center-vh(label="Please visit https://github.com/patarapolw/qsearch on how to search"
@@ -53,6 +53,11 @@
               CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
                 :rules="getIdentifierRules('column', c.name)"
                 :centered="true")
+                template(v-slot:after)
+                  fontawesome.sorter(v-if="sort[0] === c.name" icon="caret-down")
+                  fontawesome.sorter(v-else-if="sort[0] === '-' + c.name" icon="caret-up")
+                  fontawesome.sorter.secondary(v-else-if="sort.includes(c.name)" icon="caret-down")
+                  fontawesome.sorter.secondary(v-else-if="sort.includes('-' + c.name)" icon="caret-up")
           th
             CellEditor(placeholder="+" @finish-editing="addCol($event)" type="input"
               :rules="getIdentifierRules('column')")
@@ -110,6 +115,14 @@
       a(role="button" @click="deleteTable") Delete
   contextmenu(ref="colContext")
     li
+      a(role="button" @click="sort = [selectedField]") Sort ascending
+    li
+      a(role="button" @click="sort = ['-' + selectedField]") Sort descending
+    li
+      a(role="button" @click="sort.push(selectedField)") Sort ascending secondarily
+    li
+      a(role="button" @click="sort.push('-' + selectedField)") Sort descending secondarily
+    li
       a(role="button" @click="isColSettingsModal = true") Settings
     li
       a(role="button" @click="deleteCol") Delete
@@ -148,7 +161,7 @@ export default class App extends Vue {
   count = 0
   perPage = 10
   page = 1
-  sort = ''
+  sort: string[] = []
 
   tableName = 'default'
   meta: any = {}
@@ -166,15 +179,13 @@ export default class App extends Vue {
   isTableSettingsModal = false
   isColSettingsModal = false
 
+  q = ''
+  qTmp = ''
+
   dotProp = dotProp
   normalizeArray = normalizeArray
 
   filepath = ''
-
-  get q () {
-    const u = new URL(location.href)
-    return u.searchParams.get('q') || ''
-  }
 
   created () {
     this.init()
@@ -228,6 +239,7 @@ export default class App extends Vue {
     return []
   }
 
+  @Watch('q')
   @Watch('filepath')
   async init () {
     this.page = 1
@@ -250,12 +262,17 @@ export default class App extends Vue {
     }
 
     this.page = 1
-    this.sort = ''
+    this.sort = []
 
     this.onPageChange()
   }
 
-  @Watch('sort')
+  @Watch('sort', { deep: true })
+  async onSort () {
+    this.page = 1
+    await this.onPageChange()
+  }
+
   @Watch('page')
   async onPageChange () {
     if (this.filepath) {
@@ -264,7 +281,7 @@ export default class App extends Vue {
         q: this.q,
         offset: (this.page - 1) * this.perPage,
         limit: this.perPage,
-        sort: this.sort || undefined
+        sort: this.sort
       })
       const { result, count, columns } = r.data
 
@@ -335,7 +352,7 @@ export default class App extends Vue {
     }
 
     this.page = 1
-    this.sort = ''
+    this.sort = []
     this.onPageChange()
   }
 
@@ -547,6 +564,14 @@ body {
 
     th {
       background-color: rgba(238, 238, 238, 0.5);
+
+      .sorter {
+        margin-left: 0.5em;
+
+        &.secondary {
+          color: lightgray;
+        }
+      }
     }
   }
 }

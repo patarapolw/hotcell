@@ -115,7 +115,7 @@ export function splitOp (ss: string) {
 
   data.map((d) => {
     // eslint-disable-next-line no-useless-escape
-    const m = /^(?<prefix>[\-+])?(?<k>[A-Z_\-]+)(?<op>[:><])(?<v>.+)$/i.exec(d)
+    const m = /^(?<prefix>[\-+])?(?:(?<k>[A-Z_\-]+)(?<op>[:><]))?(?<v>.+)$/i.exec(d)
     if (m && m.groups) {
       output.push({
         prefix: m.groups.prefix,

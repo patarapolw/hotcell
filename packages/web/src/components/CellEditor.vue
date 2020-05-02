@@ -7,6 +7,7 @@
     span(v-if="placeholder") {{typeof value === 'undefined' ? placeholder : currentValue}}
     i(v-else-if="[null, undefined].includes(value)") NULL
     span(v-else) {{currentValue}}
+    slot(name="after")
   .field(v-else v-clickoutside="onClickOutside")
     component.input(
       :is="type || 'input'"

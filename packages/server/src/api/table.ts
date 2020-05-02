@@ -167,7 +167,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
       strCond = `(${strCond}) AND (${where})`
     }
 
-    const strSort = splitOp(sort.join(' ')).map(t => `${t.v} ${t.op === '-' ? 'DESC' : 'ASC'}`).join(',')
+    const strSort = sort.map((s: string) => s[0] === '-' ? `${s.substr(1)} DESC` : `${s} ASC NULLS LAST`).join(',')
 
     const baseSql = /*sql*/`
     FROM ${safeColumnName(table)}
@@ -178,13 +178,13 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
       db.all(/*sql*/`
       SELECT *, ROWID
       ${baseSql}
-      ${strSort ? `ORDER BY ${strSort}` : ''}
+      ${sort.length > 0 ? `ORDER BY ${strSort}` : ''}
       ${limit ? `LIMIT ${limit}` : ''} OFFSET ${offset}
-      `),
+      `, p.data),
       hasCount ? db.get(/*sql*/`
       SELECT COUNT(*) AS [count]
       ${baseSql}
-      `) : null
+      `, p.data) : null
     ])
 
     return {

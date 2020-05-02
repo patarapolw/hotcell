@@ -1,17 +1,27 @@
 {
   "name": "hotcell",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Yet another SQLite Editor",
+  "private": true,
   "scripts": {
+    "dev": "concurrently-cd 'packages/*:npm:dev'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "sqlite",
+    "nosql",
+    "editor"
+  ],
+  "author": {
+    "email": "patarapolw@gmail.com",
+    "name": "Pacharapol Withayasakpunt",
+    "url": "https://polvcode.dev"
+  },
   "license": "ISC",
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.30.0",
     "@typescript-eslint/parser": "^2.30.0",
+    "concurrently": "^5.2.0",
+    "concurrently-cd": "^1.0.0",
     "eslint": "^6.8.0",
     "eslint-config-standard": "^14.1.1",
     "eslint-plugin-import": "^2.20.2",
