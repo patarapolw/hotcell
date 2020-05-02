@@ -3,7 +3,7 @@
   "description": "Yet another SQLite Editor",
   "private": true,
   "scripts": {
-    "dev": "concurrently-cd 'packages/*:npm:dev'",
+    "dev": "cd package/electron && npm run watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -20,8 +20,6 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.30.0",
     "@typescript-eslint/parser": "^2.30.0",
-    "concurrently": "^5.2.0",
-    "concurrently-cd": "^1.0.0",
     "eslint": "^6.8.0",
     "eslint-config-standard": "^14.1.1",
     "eslint-plugin-import": "^2.20.2",

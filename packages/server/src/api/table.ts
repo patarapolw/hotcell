@@ -320,7 +320,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
 
           await db.exec(/*sql*/`
           ALTER TABLE ${safeColumnName(table)} ADD COLUMN
-          ${safeColumnName(k)} ${c.type} ${c.pk ? 'PRIMARY' : ''} ${typeof c.default !== 'undefined' ? `DEFAULT ${
+          ${safeColumnName(k)} ${c.type} ${c.pk ? 'PRIMARY' : ''} ${![null, undefined].includes(c.default) ? `DEFAULT ${
             typeof c.default === 'number' ? c.default : `'${c.default.replace(/'/g, "[']")}'`
           }` : ''} ${c.notnull ? 'NOT NULL' : ''}
           `)
@@ -329,7 +329,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
         const cols = Array.from(colMap.values()).sort((a, b) => a.cid - b.cid)
         const colDef = (c: typeof cols[0]) => {
           return /*sql*/`
-          ${safeColumnName(c.name)} ${c.type} ${c.pk ? 'PRIMARY' : ''} ${typeof c.dflt_value !== 'undefined' ? `DEFAULT ${
+          ${safeColumnName(c.name)} ${c.type} ${c.pk ? 'PRIMARY' : ''} ${![null, undefined].includes(c.dflt_value) ? `DEFAULT ${
             typeof c.dflt_value === 'number' ? c.dflt_value : `'${c.dflt_value.replace(/'/g, "[']")}'`
           }` : ''} ${c.notnull ? 'NOT NULL' : ''}
           `

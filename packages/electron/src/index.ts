@@ -1,29 +1,33 @@
-import { app, protocol, BrowserWindow } from 'electron'
-import {
-  createProtocol,
-  installVueDevtools
-} from 'vue-cli-plugin-electron-builder/lib'
-import contextMenu from 'electron-context-menu'
 import { fork } from 'child_process'
 import path from 'path'
+
+import { app, protocol, BrowserWindow } from 'electron'
+import contextMenu from 'electron-context-menu'
 // @ts-ignore
 import ON_DEATH from 'death'
 
+import { createProtocol } from './vue-cli-plugin'
+
 const isDevelopment = process.env.NODE_ENV !== 'production'
+app.allowRendererProcessReuse = true
+
 contextMenu()
-if (!isDevelopment) {
-  const p = fork(path.join(__dirname, 'server/index.js'))
-  ON_DEATH(() => {
-    if (!p.killed) {
-      p.kill()
-    }
-  })
-  app.once('before-quit', () => {
-    if (!p.killed) {
-      p.kill()
-    }
-  })
-}
+
+const p = fork(path.join(__dirname, './server/index.js'), [], {
+  stdio: 'inherit'
+})
+
+ON_DEATH(() => {
+  if (!p.killed) {
+    p.kill()
+  }
+})
+
+app.once('before-quit', () => {
+  if (!p.killed) {
+    p.kill()
+  }
+})
 
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
@@ -43,15 +47,9 @@ function createWindow () {
   })
   win.maximize()
 
-  if (process.env.WEBPACK_DEV_SERVER_URL) {
-    // Load the url of the dev server if in development mode
-    win.loadURL(process.env.WEBPACK_DEV_SERVER_URL as string)
-    // if (!process.env.IS_TEST) win.webContents.openDevTools()
-  } else {
-    createProtocol('app')
-    // Load the index.html when not in development
-    win.loadURL('app://./index.html')
-  }
+  createProtocol('app')
+  // Load the index.html when not in development
+  win.loadURL('app://./index.html')
 
   win.on('closed', () => {
     win = null
@@ -87,6 +85,7 @@ app.on('ready', async () => {
     // If you are not using Windows 10 dark mode, you may uncomment these lines
     // In addition, if the linked issue is closed, you can upgrade electron and uncomment these lines
     try {
+      const installVueDevtools = (await import('./vue-cli-plugin/installVueDevtools')).default
       await installVueDevtools()
     } catch (e) {
       console.error('Vue Devtools failed to install:', e.toString())

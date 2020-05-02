@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "ts-node-dev src/index.ts",
     "build": "tsc -P src/tsconfig.json",
-    "electron:build": "tsc -P src/tsconfig.json --outDir ../web/public/server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

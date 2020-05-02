@@ -1,0 +1,60 @@
+{
+  "name": "hotcell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Yet another SQLite Editor",
+  "keywords": [],
+  "homepage": "https://github.com/patarapolw/hotcell",
+  "bugs": {
+    "url": "https://github.com/patarapolw/hotcell/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patarapolw/hotcell.git"
+  },
+  "license": "ISC",
+  "author": "Pacharapol Withayasakpunt <patarapolw@gmail.com> (https://polvcode.dev)",
+  "main": "lib/index.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "release": "electron-builder -c.mac.identity=null",
+    "postinstall": "electron-builder install-app-deps",
+    "postuninstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "dayjs": "^1.8.26",
+    "death": "^1.1.0",
+    "dot-prop": "^5.2.0",
+    "electron-context-menu": "^2.0.0",
+    "fastify": "^2.14.0",
+    "fastify-cors": "^3.0.3",
+    "fastify-oas": "^2.6.2",
+    "pino-pretty": "^4.0.0",
+    "sqlite": "^4.0.7",
+    "sqlite3": "^4.2.0"
+  },
+  "devDependencies": {
+    "concurrently": "^5.2.0",
+    "electron": "^8.2.5",
+    "electron-builder": "^22.6.0",
+    "rimraf": "^3.0.2",
+    "shlex": "^2.0.2",
+    "typescript": "^3.8.3",
+    "unzip-crx": "^0.2.0"
+  },
+  "build": {
+    "appId": "dev.polvcode.hotcell",
+    "productName": "HotCell",
+    "fileAssociations": [
+      {
+        "ext": [
+          "sqlite",
+          "sqlite3",
+          "db"
+        ]
+      }
+    ]
+  }
+}
