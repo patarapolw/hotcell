@@ -182,3 +182,11 @@ export function safeColumnName (s: string) {
     return `${p1}"${p2.replace(/"/g, '["]')}"${p3}`
   })
 }
+
+export function decode (b: string): string | number {
+  if (b.startsWith('$')) {
+    return parseFloat(b.substr(1).replace('$', '.'))
+  }
+
+  return b
+}

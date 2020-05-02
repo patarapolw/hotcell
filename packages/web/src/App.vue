@@ -110,19 +110,19 @@
       .modal-card-body(style="height: 100px;")
       footer.modal-card-foot
         button.button(@click="isColSettingsModal = false") Close
-  contextmenu(ref="fileContext")
+  contextmenu(ref="fileContext" lazy)
     li
       a(role="button" @click="filepath = ''") Create new file
     li
-      a(role="button" @click="init()") Reload
-  contextmenu(ref="tableContext")
+      a(role="button" @click="reset()") Reload
+  contextmenu(ref="tableContext" lazy)
     li
       a(role="button" @click="isTableSettingsModal = true") Settings
     li
       a(role="button" @click="normalizeArray($refs['table.' + selectedTable]).doEdit()") Rename
     li
       a(role="button" @click="deleteTable") Delete
-  contextmenu(ref="colContext")
+  contextmenu(ref="colContext" lazy)
     li.v-context__sub
       a Sort
       ul.v-context
@@ -137,48 +137,46 @@
     li.v-context__sub
       a Data type
       ul.v-context
-        li
+        li(:class="getFieldType() === 'TEXT' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'TEXT'"
-            v-if="fieldType !== 'TEXT'"
           ) TEXT
-        li
+        li(:class="getFieldType() === 'INTEGER' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'INTEGER'"
-            v-if="fieldType !== 'INTEGER'"
           ) INTEGER
-        li
+        li(:class="getFieldType() === 'REAL' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'REAL'"
-            v-if="fieldType !== 'REAL'"
           ) REAL
-        li
+        li(:class="getFieldType() === 'BLOB' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'BLOB'"
-            v-if="fieldType !== 'BLOB'"
           ) BLOB
-        li
+        li(:class="getFieldType() === 'date' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'date'"
-            v-if="fieldType !== 'date'"
           ) date
-        li
-          a(
-            role="button"
-            @click="fieldType = 'json'"
-            v-if="fieldType !== 'json'"
-          ) json
-        li
+        li(:class="getFieldType() === 'boolean' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'boolean'"
-            v-if="fieldType !== 'boolean'"
           ) boolean
+        li(:class="getFieldType() === 'jsonobject' ? 'is-active' : ''")
+          a(
+            role="button"
+            @click="fieldType = 'jsonobject'"
+          ) jsonobject
+        li(:class="getFieldType() === 'jsonarray' ? 'is-active' : ''")
+          a(
+            role="button"
+            @click="fieldType = 'jsonarray'"
+          ) jsonarray
     li(v-if="selectedUnique !== null")
       a(
         role="button"
@@ -197,10 +195,10 @@
       a(role="button" @click="isColSettingsModal = true") Settings
     li
       a(role="button" @click="deleteCol") Delete
-  contextmenu(ref="rowContext")
+  contextmenu(ref="rowContext" lazy)
     li
       a(role="button" @click="deleteRow") Delete
-  contextmenu(ref="cellContext")
+  contextmenu(ref="cellContext" lazy)
     li
       a(role="button" @click="setNull") Set NULL
   b-loading(:active.sync="isLoading")
@@ -211,9 +209,10 @@ import { Component, Vue, Watch } from 'vue-property-decorator'
 import { nanoid } from 'nanoid'
 import dotProp from 'dot-prop'
 import dayjs from 'dayjs'
+import { remote } from 'electron'
 
 import CellEditor from './components/CellEditor.vue'
-import { normalizeArray } from './assets/util'
+import { normalizeArray, encode } from './assets/util'
 import { api } from './assets/api'
 
 interface IColumn {
@@ -311,7 +310,7 @@ export default class App extends Vue {
         }]
       })
 
-      dotProp.set(this.editList, `createIndex.${this.selectedField}_unique_idx`, {
+      dotProp.set(this.editList, `table.index.${this.selectedField}_unique_idx`, {
         name: [this.selectedField],
         unique: true
       })
@@ -319,7 +318,7 @@ export default class App extends Vue {
       index = index
         .filter((idx) => {
           if (idx.info[0].name === this.selectedField) {
-            dotProp.set(this.editList, `dropIndex.${idx.name}`, true)
+            dotProp.set(this.editList, `table.index.${idx.name}`, {})
 
             return false
           }
@@ -342,7 +341,7 @@ export default class App extends Vue {
     column.map((c: any) => {
       if (c.name === this.selectedField) {
         c.pk = type ? 1 : 0
-        dotProp.set(this.editList, `replaceTable.pk.${this.selectedField}`, type)
+        dotProp.set(this.editList, `col.${this.selectedField}.pk`, type)
       }
     })
 
@@ -351,6 +350,16 @@ export default class App extends Vue {
   }
 
   get fieldType () {
+    const c = (this.tableMeta.column || []).filter(c => c.name === this.selectedField)[0]
+    if (!c) {
+      return ''
+    }
+
+    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`)
+    return xtype || c.type
+  }
+
+  getFieldType () {
     const c = (this.tableMeta.column || []).filter(c => c.name === this.selectedField)[0]
     if (!c) {
       return ''
@@ -373,10 +382,13 @@ export default class App extends Vue {
       }
     }
 
-    dotProp.set(this.editList, `replaceTable.col.${this.selectedField}.type`, type)
+    dotProp.set(this.editList, `col.${this.selectedField}.type`, type)
     dotProp.set(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`, xtype)
 
     this.$set(this, 'editList', this.editList)
+    this.$set(this, 'dbMeta', this.dbMeta)
+
+    this.$forceUpdate()
   }
 
   created () {
@@ -425,7 +437,17 @@ export default class App extends Vue {
         (v) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`,
         (v) => (!v || dayjs(v).isValid()) ? '' : `Not ${type}`
       )
-    } else if (type === 'json') {
+    } else if (type.startsWith('json')) {
+      if (type === 'jsonarray') {
+        rules.push(
+          (v) => (!v || v.startsWith('[')) ? '' : `Not ${type}`
+        )
+      } else {
+        rules.push(
+          (v) => (!v || v.startsWith('{')) ? '' : `Not ${type}`
+        )
+      }
+
       rules.push(
         (v: string) => {
           if (!v) {
@@ -457,12 +479,14 @@ export default class App extends Vue {
     const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
     const type = xtype || (c || {}).type
 
-    if (type === 'json') {
+    if (type.startsWith('json')) {
       return (s: any) => s ? JSON.stringify(s) : null
     } else if (type === 'date') {
       return (s: any) => s ? dayjs(s).toISOString() : null
     } else if (type === 'boolean') {
       return (s: any) => s ? s === '0' ? 'FALSE' : 'TRUE' : null
+    } else if (type.includes('INT')) {
+      return (s: any) => (s || s === 0) ? parseInt(s) : null
     } else if (['REAL', 'FLOA', 'DOUB'].some(t => type.includes(t))) {
       return (s: any) => {
         if (s || s === 0) {
@@ -493,16 +517,17 @@ export default class App extends Vue {
     return (s: any) => s
   }
 
-  @Watch('q')
   @Watch('filepath')
   async init () {
+    this.qTmp = ''
+    this.q = ''
     this.page = 1
     this.data = []
 
     if (this.filepath) {
       this.isLoading = true
 
-      const r = await api.put('/api/file/open', {}, {
+      const r = await api.get('/api/file/info', {
         params: {
           path: this.filepath
         }
@@ -525,8 +550,9 @@ export default class App extends Vue {
     this.onPageChange()
   }
 
+  @Watch('q')
   @Watch('sort', { deep: true })
-  async onSort () {
+  async reset () {
     this.page = 1
     await this.onPageChange()
   }
@@ -537,20 +563,20 @@ export default class App extends Vue {
       this.isLoading = true
 
       const r = await api.post('/api/table/q', {
-        table: this.tableName,
         q: this.q,
         offset: (this.page - 1) * this.perPage,
         limit: this.perPage,
         sort: this.sort
+      }, {
+        params: {
+          table: this.tableName
+        }
       })
       const { result, count, meta } = r.data
       this.$set(this, 'tableMeta', r.data.meta)
 
       this.count = count
-      this.data = result.map((r: any) => {
-        r.__id = nanoid()
-        return r
-      })
+      this.data = result
 
       this.addRow()
 
@@ -592,13 +618,27 @@ export default class App extends Vue {
     })
   }
 
-  renameTable (newName: string, oldName: string) {
+  async renameTable (newName: string, oldName: string) {
     if (this.tableName === oldName) {
-      this.checkCommit(() => {
+      this.checkCommit(async () => {
+        await api.patch('/api/table/rename', undefined, {
+          params: {
+            table: oldName,
+            new: newName
+          }
+        })
+
         this.tables = this.tables.map(t => t === oldName ? newName : t)
         this.tableName = newName
       })
     } else {
+      await api.patch('/api/table/rename', undefined, {
+        params: {
+          table: oldName,
+          new: newName
+        }
+      })
+
       this.tables = this.tables.map(t => t === oldName ? newName : t)
     }
   }
@@ -608,9 +648,14 @@ export default class App extends Vue {
       message: `Are you sure you want to delete table: ${this.selectedTable}?`,
       type: 'is-danger',
       hasIcon: true,
-      onConfirm: () => {
-        this.tables = this.tables.filter(t => t !== this.selectedTable)
+      onConfirm: async () => {
+        await api.delete('/api/table/', {
+          params: {
+            table: this.selectedTable
+          }
+        })
 
+        this.tables = this.tables.filter(t => t !== this.selectedTable)
         if (this.selectedTable === this.tableName) {
           this.tableName = this.tables[0]
         }
@@ -639,6 +684,8 @@ export default class App extends Vue {
       this.tables = [...this.tables, this.tableName]
     }
 
+    this.qTmp = ''
+    this.q = ''
     this.page = 1
     this.sort = []
     this.onPageChange()
@@ -657,6 +704,9 @@ export default class App extends Vue {
       type: 'is-danger',
       hasIcon: true,
       onConfirm: () => {
+        dotProp.set(this.editList, `row.${encode(this.selectedRow.__id)}`, {})
+        this.$set(this, 'editList', this.editList)
+
         this.data = this.data.filter(d => {
           return d.__id !== this.selectedRow.__id
         })
@@ -680,7 +730,9 @@ export default class App extends Vue {
       }
     ]
 
-    dotProp.set(this.editList, 'alter.addCol', { field: name })
+    dotProp.set(this.editList, `col.${name}`, {
+      type: 'TEXT'
+    })
     this.$set(this, 'editList', this.editList)
   }
 
@@ -688,6 +740,8 @@ export default class App extends Vue {
     if (!name.trim()) {
       return
     }
+
+    dotProp.set(this.editList, `col.${oldName}.rename`, name)
 
     this.tableMeta.column = this.columns.map(c => {
       if (c.name === oldName) {
@@ -708,6 +762,17 @@ export default class App extends Vue {
       })
       return d1
     })
+
+    Object.values(dotProp.get<any>(this.editList, 'row', {})).map((d: any) => {
+      Object.entries(d.data).map(([k, v]) => {
+        if (k === oldName) {
+          d[name] = v
+          delete d[k]
+        }
+      })
+    })
+
+    this.$set(this, 'editList', this.editList)
   }
 
   async deleteCol () {
@@ -728,6 +793,9 @@ export default class App extends Vue {
         })
 
         this.tableMeta.column = this.columns.filter(c => c.name !== this.selectedField)
+
+        dotProp.set(this.editList, `col.${this.selectedField}`, {})
+        this.$set(this, 'editList', this.editList)
       }
     })
   }
@@ -745,6 +813,9 @@ export default class App extends Vue {
 
       return d
     })
+
+    dotProp.set(this.editList, `row.${encode(this.selectedRow.__id)}.data.${this.selectedField}`, null)
+    this.$set(this, 'editList', this.editList)
   }
 
   onFinishEdit (row: any, field: string, data: string) {
@@ -753,7 +824,7 @@ export default class App extends Vue {
         row.__id = nanoid()
         row[field] = data
 
-        dotProp.set(this.editList, `insert.${row.__id}.${field}`, data)
+        dotProp.set(this.editList, `row.${encode(row.__id)}.data.${field}`, data)
         this.$set(this, 'editList', this.editList)
 
         this.data = [
@@ -763,7 +834,7 @@ export default class App extends Vue {
         this.$set(this, 'data', this.data)
       }
     } else if (row[field] !== data) {
-      dotProp.set(this.editList, `update.${row.__id}.${field}`, data)
+      dotProp.set(this.editList, `row.${encode(row.__id)}.data.${field}`, data)
       this.$set(this, 'editList', this.editList)
       this.$set(this, 'data', this.data.map(d => {
         if (d.__id === row.__id) {
@@ -775,18 +846,42 @@ export default class App extends Vue {
     }
   }
 
-  commit () {
+  async commit () {
+    const path = this.filepath || (await remote.dialog.showSaveDialog({
+      filters: [
+        { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })).filePath
+
+    if (!path) {
+      this.$buefy.snackbar.open('Not saved')
+      return
+    }
+
+    await api.patch('/api/file/', this.dbMeta, {
+      params: {
+        path
+      }
+    })
+
+    await api.patch('/api/table/', this.editList, {
+      params: {
+        table: this.tableName
+      }
+    })
+
+    this.filepath = path
     this.clear()
   }
 
   clear () {
     this.$set(this, 'editList', {})
-    this.init()
+    this.reset()
   }
 
   openFile () {
     this.checkCommit(async () => {
-      const { remote } = await import('electron')
       const r = await remote.dialog.showOpenDialog({
         filters: [
           { name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3'] },
@@ -885,7 +980,15 @@ body {
   cursor: pointer;
 }
 
-.v-context__sub > a:after {
-  content: "▶" !important;
+.v-context {
+  li.is-active {
+    background-color: aliceblue;
+  }
+
+  .v-context__sub {
+    > a:after {
+      content: "▶" !important;
+    }
+  }
 }
 </style>

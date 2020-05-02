@@ -66,6 +66,7 @@ export async function getTableMeta (name: string) {
   const db = await getDb()
 
   const column: {
+    cid: number
     name: string
     type: string
     notnull: number
