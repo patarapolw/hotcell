@@ -6,12 +6,12 @@
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
         a(role="button" @click="changeTable(t)")
           CellEditor(:value="t" @finish-editing="renameTable($event, t)" type="input"
-            :rules="getIdentifierRules('table', t)" :before-open="checkCommit()"
+            :rules="getIdentifierRules('table', t)" :before-open="() => checkCommit()"
             :manual="true" :marginless="true" :ref="'table.' + t")
       li
         a(role="button")
           CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
-            :rules="getIdentifierRules('table')" :before-open="checkCommit()")
+            :rules="getIdentifierRules('table')" :before-open="() => checkCommit()")
   nav.nav
     div(style="width: 600px;")
       .file.has-name.is-fullwidth(@click="openFile" @contextmenu.prevent="$refs.fileContext.open")
@@ -203,6 +203,7 @@
   contextmenu(ref="cellContext")
     li
       a(role="button" @click="setNull") Set NULL
+  b-loading(:active.sync="isLoading")
 </template>
 
 <script lang="ts">
@@ -231,6 +232,7 @@ interface IColumn {
 })
 export default class App extends Vue {
   data: any[] = []
+  isLoading = false
 
   count = 0
   perPage = 10
@@ -498,6 +500,8 @@ export default class App extends Vue {
     this.data = []
 
     if (this.filepath) {
+      this.isLoading = true
+
       const r = await api.put('/api/file/open', {}, {
         params: {
           path: this.filepath
@@ -507,6 +511,8 @@ export default class App extends Vue {
       this.tables = r.data.tables
       this.tableName = r.data.tables[0]
       this.$set(this, 'dbMeta', r.data.meta)
+
+      this.isLoading = false
     } else {
       this.tables = ['default']
       this.tableName = 'default'
@@ -528,6 +534,8 @@ export default class App extends Vue {
   @Watch('page')
   async onPageChange () {
     if (this.filepath) {
+      this.isLoading = true
+
       const r = await api.post('/api/table/q', {
         table: this.tableName,
         q: this.q,
@@ -545,6 +553,8 @@ export default class App extends Vue {
       })
 
       this.addRow()
+
+      this.isLoading = false
     } else {
       this.$nextTick(() => {
         this.page = 1
@@ -594,19 +604,18 @@ export default class App extends Vue {
   }
 
   async deleteTable () {
-    const r = await this.$buefy.dialog.confirm({
+    this.$buefy.dialog.confirm({
       message: `Are you sure you want to delete table: ${this.selectedTable}?`,
       type: 'is-danger',
-      hasIcon: true
-    })
+      hasIcon: true,
+      onConfirm: () => {
+        this.tables = this.tables.filter(t => t !== this.selectedTable)
 
-    if (r) {
-      this.tables = this.tables.filter(t => t !== this.selectedTable)
-
-      if (this.selectedTable === this.tableName) {
-        this.tableName = this.tables[0]
+        if (this.selectedTable === this.tableName) {
+          this.tableName = this.tables[0]
+        }
       }
-    }
+    })
   }
 
   checkCommit (cb?: () => void) {
@@ -643,17 +652,16 @@ export default class App extends Vue {
   }
 
   async deleteRow () {
-    const r = await this.$buefy.dialog.confirm({
+    this.$buefy.dialog.confirm({
       message: 'Are you sure you want to delete this row?',
       type: 'is-danger',
-      hasIcon: true
+      hasIcon: true,
+      onConfirm: () => {
+        this.data = this.data.filter(d => {
+          return d.__id !== this.selectedRow.__id
+        })
+      }
     })
-
-    if (r) {
-      this.data = this.data.filter(d => {
-        return d.__id !== this.selectedRow.__id
-      })
-    }
   }
 
   addCol (name: string) {
@@ -703,26 +711,25 @@ export default class App extends Vue {
   }
 
   async deleteCol () {
-    const r = await this.$buefy.dialog.confirm({
+    this.$buefy.dialog.confirm({
       message: `Are you sure you want to delete column: ${this.selectedField}?`,
       type: 'is-danger',
-      hasIcon: true
-    })
+      hasIcon: true,
+      onConfirm: () => {
+        this.data = this.data.map(d => {
+          const d1: any = {}
+          Object.entries(d).map(([k, v]) => {
+            if (k !== this.selectedField) {
+              d1[k] = v
+            }
+          })
 
-    if (r) {
-      this.data = this.data.map(d => {
-        const d1: any = {}
-        Object.entries(d).map(([k, v]) => {
-          if (k !== this.selectedField) {
-            d1[k] = v
-          }
+          return d1
         })
 
-        return d1
-      })
-
-      this.tableMeta.column = this.columns.filter(c => c.name !== this.selectedField)
-    }
+        this.tableMeta.column = this.columns.filter(c => c.name !== this.selectedField)
+      }
+    })
   }
 
   setNull () {
@@ -801,8 +808,6 @@ body {
 }
 
 #App {
-  padding-top: 1em;
-
   .nav {
     margin-bottom: 1em;
     display: flex;
