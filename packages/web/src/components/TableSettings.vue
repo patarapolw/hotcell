@@ -47,7 +47,9 @@ export default class TableSettings extends Vue {
   get content () {
     return {
       meta: this.currentMeta,
-      table: this.currentTableMeta
+      index: this.currentTableMeta.index.filter((idx) => {
+        return idx.info.length > 1
+      })
     }
   }
 
@@ -61,7 +63,10 @@ export default class TableSettings extends Vue {
   }
 
   save () {
-    this.$emit('save', this.content)
+    this.$emit('save', {
+      meta: this.currentMeta,
+      table: this.currentTableMeta
+    })
   }
 }
 </script>

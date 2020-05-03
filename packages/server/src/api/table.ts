@@ -241,7 +241,7 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
 
         if (oldIdx) {
           await db.exec(/*sql*/`
-          DROP INDEX ${oldIdx.name}
+          DROP INDEX IF EXISTS ${oldIdx.name}
           `)
         }
 

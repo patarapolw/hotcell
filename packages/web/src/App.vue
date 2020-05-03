@@ -6,12 +6,12 @@
         @contextmenu.prevent="(evt) => { selectedTable = t; $refs.tableContext.open(evt) }")
         a(role="button" @click="changeTable(t)")
           CellEditor(:value="t" @finish-editing="renameTable($event, t)" type="input"
-            :rules="getIdentifierRules('table', t)" :before-open="() => checkCommit()"
+            :rules="validator.getIdentifierRules('table', t)" :before-open="() => checkCommit()"
             :manual="true" :marginless="true" :ref="'table.' + t")
       li
         a(role="button")
           CellEditor(placeholder="+" @finish-editing="addTable($event)" type="input"
-            :rules="getIdentifierRules('table')" :before-open="() => checkCommit()")
+            :rules="validator.getIdentifierRules('table')" :before-open="() => checkCommit()")
   nav.nav
     div(style="width: 600px;")
       .file.has-name.is-fullwidth(@click="openFile" @contextmenu.prevent="$refs.fileContext.open")
@@ -51,7 +51,7 @@
           th(v-for="c in columns.filter(c => c.pk)" :key="c.name")
             div(@contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
               CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
-                :rules="getIdentifierRules('column', c.name)"
+                :rules="validator.getIdentifierRules('column', c.name)"
                 :centered="true")
                 template(v-slot:after)
                   fontawesome.sorter(v-if="sort[0] === c.name" icon="caret-down")
@@ -61,7 +61,7 @@
           th(v-for="c in columns.filter(c => !c.pk)" :key="c.name")
             div(@contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
               CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
-                :rules="getIdentifierRules('column', c.name)"
+                :rules="validator.getIdentifierRules('column', c.name)"
                 :centered="true")
                 template(v-slot:after)
                   fontawesome.sorter(v-if="sort[0] === c.name" icon="caret-down")
@@ -70,7 +70,7 @@
                   fontawesome.sorter.secondary(v-else-if="sort.includes('-' + c.name)" icon="caret-up")
           th
             CellEditor(placeholder="+" @finish-editing="addCol($event)" type="input"
-              :rules="getIdentifierRules('column')")
+              :rules="validator.getIdentifierRules('column')")
       tbody
         tr(v-for="d in data" :key="d.__id")
           th(v-if="tableMeta.column.length === 0")
@@ -82,8 +82,8 @@
               @finish-editing="onFinishEdit(d, c.name, $event)"
               type="textarea"
               :placeholder="d.__id ? '' : ' '"
-              :rules="getCellRules(c.name)"
-              :formatter="getCellFormatter(c.name)"
+              :rules="validator.getCellRules(c.name, getXType(c.name))"
+              :formatter="formatter.getCellFormatter(c.name, getXType(c.name))"
             )
           td(v-for="c in columns.filter(c => !c.pk)" :key="c.name"
             @contextmenu.prevent="(evt) => { selectedRow = d; selectedField = c.name; $refs.cellContext.open(evt) }"
@@ -92,8 +92,8 @@
               @finish-editing="onFinishEdit(d, c.name, $event)"
               type="textarea"
               :placeholder="d.__id ? '' : ' '"
-              :rules="getCellRules(c.name)"
-              :formatter="getCellFormatter(c.name)"
+              :rules="validator.getCellRules(c.name, getXType(c.name))"
+              :formatter="formatter.getCellFormatter(c.name, getXType(c.name))"
             )
           td
             div
@@ -109,8 +109,9 @@
   TableSettings(v-if="isTableSettingsModal"
     :meta="dotProp.get(dbMeta, 'table', {})" :tableMeta="tableMeta"
     @save="setTableSettings" @close="isTableSettingsModal = false")
-  ColSettings(v-if="isColSettingsModal"
+  ColSettings(v-if="isColSettingsModal" :name="selectedField"
     :meta="dotProp.get(dbMeta, 'col.' + selectedField, {})" :tableMeta="tableMeta"
+    :indexMeta="indexMeta"
     @save="setColSettings" @close="isColSettingsModal = false")
   contextmenu(ref="fileContext" lazy)
     li
@@ -139,42 +140,42 @@
     li.v-context__sub
       a Data type
       ul.v-context
-        li(:class="getFieldType() === 'TEXT' ? 'is-active' : ''")
+        li(:class="fieldType === 'TEXT' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'TEXT'"
           ) TEXT
-        li(:class="getFieldType() === 'INTEGER' ? 'is-active' : ''")
+        li(:class="fieldType === 'INTEGER' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'INTEGER'"
           ) INTEGER
-        li(:class="getFieldType() === 'REAL' ? 'is-active' : ''")
+        li(:class="fieldType === 'REAL' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'REAL'"
           ) REAL
-        li(:class="getFieldType() === 'BLOB' ? 'is-active' : ''")
+        li(:class="fieldType === 'BLOB' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'BLOB'"
           ) BLOB
-        li(:class="getFieldType() === 'date' ? 'is-active' : ''")
+        li(:class="fieldType === 'date' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'date'"
           ) date
-        li(:class="getFieldType() === 'boolean' ? 'is-active' : ''")
+        li(:class="fieldType === 'boolean' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'boolean'"
           ) boolean
-        li(:class="getFieldType() === 'jsonobject' ? 'is-active' : ''")
+        li(:class="fieldType === 'jsonobject' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'jsonobject'"
           ) jsonobject
-        li(:class="getFieldType() === 'jsonarray' ? 'is-active' : ''")
+        li(:class="fieldType === 'jsonarray' ? 'is-active' : ''")
           a(
             role="button"
             @click="fieldType = 'jsonarray'"
@@ -234,6 +235,8 @@ import ColSettings from './components/ColSettings.vue'
 import { normalizeArray, encode } from './assets/util'
 import { api } from './assets/api'
 import { IColumn } from './assets/types'
+import { Validator } from './assets/validator'
+import { Formatter } from './assets/formatter'
 
 @Component({
   components: {
@@ -269,6 +272,7 @@ export default class App extends Vue {
   selectedTable = ''
   selectedField = ''
   selectedRow: any = {}
+  selectedIndex = ''
 
   editList: any = {}
 
@@ -288,6 +292,14 @@ export default class App extends Vue {
 
   get columns (): IColumn[] {
     return this.tableMeta.column
+  }
+
+  get validator () {
+    return new Validator(this.tables, this.columns)
+  }
+
+  get formatter () {
+    return new Formatter(this.columns)
   }
 
   get selectedIndexStatus (): string {
@@ -364,23 +376,8 @@ export default class App extends Vue {
   }
 
   get fieldType () {
-    const c = (this.tableMeta.column || []).filter(c => c.name === this.selectedField)[0]
-    if (!c) {
-      return ''
-    }
-
     const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`)
-    return xtype || c.type
-  }
-
-  getFieldType () {
-    const c = (this.tableMeta.column || []).filter(c => c.name === this.selectedField)[0]
-    if (!c) {
-      return ''
-    }
-
-    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${this.selectedField}.type`)
-    return xtype || c.type
+    return xtype || this.validator.getType(this.selectedField)
   }
 
   set fieldType (xtype: string) {
@@ -405,130 +402,25 @@ export default class App extends Vue {
     this.$forceUpdate()
   }
 
+  get indexMeta () {
+    const { index = {} } = this.dbMeta
+    for (const [k, v] of Object.entries<any>(index)) {
+      if (v.names.includes(this.selectedField)) {
+        this.selectedIndex = k
+        return v
+      }
+    }
+
+    this.selectedIndex = nanoid()
+    return null
+  }
+
   created () {
     this.init()
   }
 
-  getIdentifierRules (type: string, existing?: string) {
-    return [
-      ...(type === 'column' ? [
-        (v: string) => (v !== existing && this.columns.map(c0 => c0.name).includes(v)) ? 'Duplicate column name' : ''
-      ] : [
-        (v: string) => (v !== existing && this.tables.includes(v)) ? 'Duplicate table name' : ''
-      ]),
-      (v: string) => (!v || /^[A-Z_][A-Z0-9_$]*$/i.test(v)) ? '' : `Invalid ${type} name`,
-      (v: string) => (/[A-Z]/.test(v)) ? 'Lowercase is preferred' : '',
-      (v: string) => (v && v.startsWith('__')) ? `Invalid ${type} name` : ''
-    ]
-  }
-
-  getCellRules (field: string) {
-    const c = this.tableMeta.column.filter(c => c.name === field)[0]
-    if (!c) {
-      return []
-    }
-
-    const rules: ((v: string) => string)[] = []
-
-    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
-    const type = xtype || c.type
-
-    /**
-     * https://www.sqlite.org/datatype3.html
-     *
-     * 3.1. Determination Of Column Affinity
-     */
-    if (type.includes('INT')) {
-      rules.push((v) => (!v || /^-?\d+$/.test(v)) ? '' : `Not ${type}`)
-    } else if (['CHAR', 'CLOB', 'TEXT'].some(t => type.includes(t))) {
-    } else if (type.includes('BLOB')) {
-    } else if (['REAL', 'FLOA', 'DOUB'].some(t => type.includes(t))) {
-      rules.push((v) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`)
-    } else if (type === 'boolean') {
-      rules.push((v) => (!v || v === '0' || v === '1') ? '' : `Not ${type}`)
-    } else if (type === 'date') {
-      rules.push(
-        (v) => (!v || /^-?\d*(\.\d+)?(e-?\d+)?$/.test(v)) ? '' : `Not ${type}`,
-        (v) => (!v || dayjs(v).isValid()) ? '' : `Not ${type}`
-      )
-    } else if (type.startsWith('json')) {
-      if (type === 'jsonarray') {
-        rules.push(
-          (v) => (!v || v.startsWith('[')) ? '' : `Not ${type}`
-        )
-      } else {
-        rules.push(
-          (v) => (!v || v.startsWith('{')) ? '' : `Not ${type}`
-        )
-      }
-
-      rules.push(
-        (v: string) => {
-          if (!v) {
-            return ''
-          }
-
-          try {
-            JSON.parse(v)
-          } catch (_) {
-            return `Not ${type}`
-          }
-
-          return ''
-        }
-      )
-    }
-
-    if (c.notnull && type !== 'TEXT') {
-      rules.push(
-        (v) => v ? '' : 'NULL is not allowed'
-      )
-    }
-
-    return rules
-  }
-
-  getCellFormatter (field: string) {
-    const c = this.tableMeta.column.filter(c => c.name === field)[0]
-    const xtype = dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
-    const type = xtype || (c || {}).type
-
-    if (type.startsWith('json')) {
-      return (s: any) => s ? JSON.stringify(s) : null
-    } else if (type === 'date') {
-      return (s: any) => s ? dayjs(s).toISOString() : null
-    } else if (type === 'boolean') {
-      return (s: any) => s ? s === '0' ? 'FALSE' : 'TRUE' : null
-    } else if (type.includes('INT')) {
-      return (s: any) => (s || s === 0) ? parseInt(s) : null
-    } else if (['REAL', 'FLOA', 'DOUB'].some(t => type.includes(t))) {
-      return (s: any) => {
-        if (s || s === 0) {
-          const f = parseFloat(s)
-          const sign = Math.sign(f)
-
-          if (sign === 0) {
-            return '0'
-          }
-
-          const [ch, man] = f.toExponential().split('e')
-          if (parseInt(man) < 1) {
-            if (ch.length > 4) {
-              return f.toPrecision(3)
-            }
-            return s
-          }
-
-          return (+f.toFixed(3)).toString()
-        }
-
-        return null
-      }
-    } else if (!['CHAR', 'CLOB', 'TEXT'].some(t => type.includes(t))) {
-      return (s: any) => s || null
-    }
-
-    return (s: any) => s
+  getXType (field: string) {
+    return dotProp.get<string>(this.dbMeta, `${this.tableName}.col.${field}.type`)
   }
 
   @Watch('filepath')
@@ -897,14 +789,20 @@ export default class App extends Vue {
     this.$set(this, 'dbMeta', this.dbMeta)
   }
 
-  setColSettings (s: { meta: any, table: any }) {
+  setColSettings (s: { meta: any, index: any, table: any }) {
     this.tableMeta = s.table
     if (Object.keys(s.meta).length > 0) {
       dotProp.set(this.dbMeta, `col.${this.selectedField}`, s.meta)
     }
 
+    if (s.index) {
+      dotProp.set(this.dbMeta, `index.${this.selectedIndex}`, s.index)
+    }
+
     this.$set(this, 'tableMeta', this.tableMeta)
     this.$set(this, 'dbMeta', this.dbMeta)
+
+    this.isColSettingsModal = false
   }
 
   openFile () {

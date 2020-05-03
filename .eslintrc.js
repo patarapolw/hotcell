@@ -24,6 +24,7 @@ module.exports = {
   rules: {
     'no-unused-vars': 0,
     'spaced-comment': 0,
-    camelcase: 0
+    camelcase: 0,
+    'no-useless-constructor': 0
   }
 }
