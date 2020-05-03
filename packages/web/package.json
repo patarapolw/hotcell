@@ -3,7 +3,7 @@
   "version": "0.1.2",
   "private": true,
   "description": "Yet another SQLite Editor",
-  "license": "ISC",
+  "license": "MIT",
   "author": "Pacharapol Withayasakpunt <patarapolw@gmail.com> (https://polvcode.dev)",
   "repository": "github:patarapolw/hotcell",
   "scripts": {
