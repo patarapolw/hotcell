@@ -120,6 +120,8 @@ export default class ColSettings extends Vue {
     return new Validator([], this.tableMeta.column)
   }
 
+  getInvalidMessage = Validator.getInvalidMessage
+
   get formatter () {
     return new Formatter(this.tableMeta.column)
   }
@@ -153,6 +155,7 @@ export default class ColSettings extends Vue {
   set indexType (type: string) {
     if (type) {
       this.currentIndexMeta = this.currentIndexMeta || {}
+      this.currentIndexMeta.name = [this.name]
       this.currentIndexMeta.unique = type === 'unique'
     } else {
       this.currentIndexMeta = {}
@@ -174,17 +177,6 @@ export default class ColSettings extends Vue {
   created () {
     this.currentMeta = JSON.parse(JSON.stringify(this.meta))
     this.currentIndexMeta = JSON.parse(JSON.stringify(this.indexMeta))
-  }
-
-  getInvalidMessage (rules: ((s: any) => string)[], value: any) {
-    for (const r of rules) {
-      const v = r(value)
-      if (v) {
-        return v
-      }
-    }
-
-    return ''
   }
 
   beforeDestroy () {

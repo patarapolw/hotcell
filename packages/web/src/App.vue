@@ -106,12 +106,13 @@
         button.button.is-success(@click="commit(); isCommitFirstModal = false") Commit
         button.button.is-warning(@click="clear(); isCommitFirstModal = false") Do not commit
         button.button(@click="isCommitFirstModal = false") Cancel
-  TableSettings(v-if="isTableSettingsModal"
-    :meta="dotProp.get(dbMeta, 'table', {})" :tableMeta="tableMeta"
+  TableSettings(v-if="isTableSettingsModal" :name="selectedTable"
+    :meta="dotProp.get(dbMeta, 'table', {})"
+    :indexMeta="indexMeta" :tables="tables"
     @save="setTableSettings" @close="isTableSettingsModal = false")
   ColSettings(v-if="isColSettingsModal" :name="selectedField"
     :meta="dotProp.get(dbMeta, 'col.' + selectedField, {})" :tableMeta="tableMeta"
-    :indexMeta="indexMeta"
+    :indexMeta="dbMeta.index || {}"
     @save="setColSettings" @close="isColSettingsModal = false")
   contextmenu(ref="fileContext" lazy)
     li
@@ -335,7 +336,7 @@ export default class App extends Vue {
 
         dotProp.set(this.editList, `table.index.${this.selectedField}_unique_idx`, {
           name: [this.selectedField],
-          unique: Number(status === 'unique')
+          unique: status === 'unique'
         })
       }
     } else {
@@ -344,7 +345,7 @@ export default class App extends Vue {
 
         dotProp.set(this.editList, `table.index.${toUpdateIdx.name}`, {
           name: [this.selectedField],
-          unique: Number(status === 'unique')
+          unique: status === 'unique'
         })
       } else if (!status) {
         this.tableMeta.index = this.tableMeta.index.filter((i) => i.name !== toUpdateIdx.name)
@@ -781,16 +782,19 @@ export default class App extends Vue {
     this.reset()
   }
 
-  setTableSettings (s: { meta: any, table: any }) {
-    this.tableMeta = s.table
+  setTableSettings (s: { meta: any, index: any }) {
     dotProp.set(this.dbMeta, 'table', s.meta)
 
-    this.$set(this, 'tableMeta', this.tableMeta)
+    if (s.index) {
+      dotProp.set(this.dbMeta, 'index', s.index)
+    }
+
     this.$set(this, 'dbMeta', this.dbMeta)
+
+    this.isTableSettingsModal = false
   }
 
-  setColSettings (s: { meta: any, index: any, table: any }) {
-    this.tableMeta = s.table
+  setColSettings (s: { meta: any, index: any }) {
     if (Object.keys(s.meta).length > 0) {
       dotProp.set(this.dbMeta, `col.${this.selectedField}`, s.meta)
     }
@@ -799,7 +803,6 @@ export default class App extends Vue {
       dotProp.set(this.dbMeta, `index.${this.selectedIndex}`, s.index)
     }
 
-    this.$set(this, 'tableMeta', this.tableMeta)
     this.$set(this, 'dbMeta', this.dbMeta)
 
     this.isColSettingsModal = false

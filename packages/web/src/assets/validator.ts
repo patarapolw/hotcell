@@ -29,6 +29,17 @@ export class Validator {
     return rules
   }
 
+  static getInvalidMessage (rules: ((s: any) => string)[], value: any) {
+    for (const r of rules) {
+      const v = r(value)
+      if (v) {
+        return v
+      }
+    }
+
+    return ''
+  }
+
   getType (field: string) {
     const c = this.columns.filter(c => c.name === field)[0]
     if (!c) {

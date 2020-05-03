@@ -248,7 +248,9 @@ export default (f: FastifyInstance, _: any, next: () => void) => {
         if (Object.keys(newIdx).length > 0) {
           const unique = typeof newIdx.unique === 'boolean' ? Number(newIdx.unique) : dotProp.get(oldIdx, 'unique', 0)
           await db.exec(/*sql*/`
-          CREATE ${unique ? 'UNIQUE' : ''} INDEX ${name} ON ${safeColumnName(table)} (${newIdx.name.join(',')})
+          CREATE ${unique ? 'UNIQUE' : ''} INDEX ${
+            oldIdx || (newIdx.name ? newIdx.name.join('__') + '__idx' : name)
+          } ON ${safeColumnName(table)} (${newIdx.name.join(',')})
           `)
         }
       }))
