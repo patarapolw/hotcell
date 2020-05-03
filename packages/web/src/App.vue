@@ -46,9 +46,20 @@
     table.table.is-striped.is-hoverable.is-bordered
       thead
         tr
-          th(v-for="c in tableMeta.column.filter(c => !c.name.startsWith('__'))" :key="c.name")
-            .padded(v-if="c.pk" style="text-align: right;") {{c.name}}
-            div(v-else @contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
+          th(v-if="tableMeta.column.length === 0")
+            .padded ROWID
+          th(v-for="c in columns.filter(c => c.pk)" :key="c.name")
+            div(@contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
+              CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
+                :rules="getIdentifierRules('column', c.name)"
+                :centered="true")
+                template(v-slot:after)
+                  fontawesome.sorter(v-if="sort[0] === c.name" icon="caret-down")
+                  fontawesome.sorter(v-else-if="sort[0] === '-' + c.name" icon="caret-up")
+                  fontawesome.sorter.secondary(v-else-if="sort.includes(c.name)" icon="caret-down")
+                  fontawesome.sorter.secondary(v-else-if="sort.includes('-' + c.name)" icon="caret-up")
+          th(v-for="c in columns.filter(c => !c.pk)" :key="c.name")
+            div(@contextmenu.prevent="(evt) => { selectedField = c.name; $refs.colContext.open(evt) }")
               CellEditor(v-model="c.name" @finish-editing="renameCol($event, c.name)" type="input"
                 :rules="getIdentifierRules('column', c.name)"
                 :centered="true")
@@ -62,10 +73,11 @@
               :rules="getIdentifierRules('column')")
       tbody
         tr(v-for="d in data" :key="d.__id")
+          th(v-if="tableMeta.column.length === 0")
+            .padded {{d.__id}}
           th(v-for="c in columns.filter(c => c.pk)" :key="c.name"
             @contextmenu.prevent="(evt) => { if(d.__id) { selectedRow = d; $refs.rowContext.open(evt) }}"
           )
-            .padded(v-if="c.name === 'ROWID'") {{d[c.name]}}
             CellEditor(v-model="d[c.name]"
               @finish-editing="onFinishEdit(d, c.name, $event)"
               type="textarea"
@@ -94,22 +106,12 @@
         button.button.is-success(@click="commit(); isCommitFirstModal = false") Commit
         button.button.is-warning(@click="clear(); isCommitFirstModal = false") Do not commit
         button.button(@click="isCommitFirstModal = false") Cancel
-  .modal(:style="{ display: isTableSettingsModal ? 'flex' : 'none'}")
-    .modal-background
-    .modal-card
-      header.modal-card-head
-        h2.modal-card-title Table settings
-      .modal-card-body(style="height: 100px;")
-      footer.modal-card-foot
-        button.button(@click="isTableSettingsModal = false") Close
-  .modal(:style="{ display: isColSettingsModal ? 'flex' : 'none'}")
-    .modal-background
-    .modal-card
-      header.modal-card-head
-        h2.modal-card-title Column settings
-      .modal-card-body(style="height: 100px;")
-      footer.modal-card-foot
-        button.button(@click="isColSettingsModal = false") Close
+  TableSettings(v-if="isTableSettingsModal"
+    :meta="dotProp.get(dbMeta, 'table', {})" :tableMeta="tableMeta"
+    @save="setTableSettings" @close="isTableSettingsModal = false")
+  ColSettings(v-if="isColSettingsModal"
+    :meta="dotProp.get(dbMeta, 'col.' + selectedField, {})" :tableMeta="tableMeta"
+    @save="setColSettings" @close="isColSettingsModal = false")
   contextmenu(ref="fileContext" lazy)
     li
       a(role="button" @click="filepath = ''") Create new file
@@ -177,20 +179,35 @@
             role="button"
             @click="fieldType = 'jsonarray'"
           ) jsonarray
-    li(v-if="selectedUnique !== null")
-      a(
-        role="button"
-        @click="selectedUnique = false"
-        v-if="!selectedUnique"
-      ) Set as UNIQUE
-      a(
-        role="button"
-        @click="selectedUnique = true"
-        v-else
-      ) Unset UNIQUE
+    li.v-context__sub(v-if="selectedIndexStatus !== 'compound'")
+      a Indexing
+      ul.v-context
+        li(v-if="!selectedIndexStatus !== 'unique'")
+          a(
+            role="button"
+            @click="selectedIndexStatus = 'unique'"
+          ) Set as UNIQUE
+        li(v-if="selectedIndexStatus !== 'index'")
+          a(
+            role="button"
+            @click="selectedIndexStatus = 'index'"
+          ) Set as INDEX
+        li(v-if="selectedIndexStatus !== ''")
+          a(
+            role="button"
+            @click="selectedIndexStatus = ''"
+          ) Delete INDEX
     li
-      a(role="button" v-if="!selectedPK" @click="selectedPK = true") Set as PRIMARY KEY
-      a(role="button" v-else @click="selectedPK = false") Unset PRIMARY KEY
+      a(
+        role="button"
+        v-if="!selectedPK"
+        @click="selectedPK = true"
+      ) Set as PRIMARY KEY
+      a(
+        role="button"
+        v-else
+        @click="selectedPK = false"
+      ) Unset PRIMARY KEY
     li
       a(role="button" @click="isColSettingsModal = true") Settings
     li
@@ -212,21 +229,17 @@ import dayjs from 'dayjs'
 import { remote } from 'electron'
 
 import CellEditor from './components/CellEditor.vue'
+import TableSettings from './components/TableSettings.vue'
+import ColSettings from './components/ColSettings.vue'
 import { normalizeArray, encode } from './assets/util'
 import { api } from './assets/api'
-
-interface IColumn {
-  name: string
-  type: string
-  dflt_value: any
-  notnull: number
-  pk: number
-  xtype?: string
-}
+import { IColumn } from './assets/types'
 
 @Component({
   components: {
-    CellEditor
+    CellEditor,
+    TableSettings,
+    ColSettings
   }
 })
 export default class App extends Vue {
@@ -277,57 +290,58 @@ export default class App extends Vue {
     return this.tableMeta.column
   }
 
-  get selectedUnique (): boolean | null {
-    let unique: boolean | null = false
-
+  get selectedIndexStatus (): string {
+    let status = ''
     const index = this.tableMeta.index
 
     index
-      .filter((idx) => idx.unique)
-      .map((idx) => idx.info.map((info: any) => info.name))
-      .map((names: string[]) => {
-        if (typeof unique === 'boolean' && names.includes(this.selectedField)) {
-          if (names.length > 1) {
-            unique = null
-          } else {
-            unique = true
-          }
+      .filter((idx) => idx.unique && idx.info.some((info) => info.name === this.selectedField))
+      .map((idx) => {
+        const names = idx.info
+        if (names.length > 1) {
+          status = 'compound'
+        } else if (!status) {
+          status = idx.unique ? 'unique' : 'index'
         }
       })
 
-    return unique
+    return status
   }
 
-  set selectedUnique (type: boolean | null) {
-    let index = this.tableMeta.index
+  set selectedIndexStatus (status: string) {
+    const toUpdateIdx = this.tableMeta.index.filter((i) => i.info.some((info) => info.name === this.selectedField))[0]
 
-    if (type) {
-      index.push({
-        name: `${this.selectedField}_unique_idx`,
-        unique: 1,
-        info: [{
-          name: this.selectedField
-        }]
-      })
-
-      dotProp.set(this.editList, `table.index.${this.selectedField}_unique_idx`, {
-        name: [this.selectedField],
-        unique: true
-      })
-    } else {
-      index = index
-        .filter((idx) => {
-          if (idx.info[0].name === this.selectedField) {
-            dotProp.set(this.editList, `table.index.${idx.name}`, {})
-
-            return false
-          }
-
-          return true
+    if (!toUpdateIdx) {
+      if (['unique', 'index'].includes(status)) {
+        this.tableMeta.index.push({
+          name: `${this.selectedField}_unique_idx`,
+          unique: Number(status === 'unique'),
+          info: [{
+            name: this.selectedField
+          }]
         })
+
+        dotProp.set(this.editList, `table.index.${this.selectedField}_unique_idx`, {
+          name: [this.selectedField],
+          unique: Number(status === 'unique')
+        })
+      }
+    } else {
+      if (['unique', 'index'].includes(status)) {
+        toUpdateIdx.unique = Number(status === 'unique')
+
+        dotProp.set(this.editList, `table.index.${toUpdateIdx.name}`, {
+          name: [this.selectedField],
+          unique: Number(status === 'unique')
+        })
+      } else if (!status) {
+        this.tableMeta.index = this.tableMeta.index.filter((i) => i.name !== toUpdateIdx.name)
+
+        dotProp.set(this.editList, `table.index.${toUpdateIdx.name}`, {})
+      }
     }
 
-    this.$set(this.tableMeta, 'index', index)
+    this.$set(this.tableMeta, 'index', this.tableMeta.index)
     this.$set(this, 'editList', this.editList)
   }
 
@@ -586,16 +600,9 @@ export default class App extends Vue {
         this.page = 1
         this.count = 0
         this.data = []
-        this.tableMeta.column = [
-          {
-            name: 'ROWID',
-            type: 'INTEGER',
-            dflt_value: null,
-            pk: 1,
-            notnull: 0
-          }
-        ]
+        this.tableMeta.column = []
         this.tableMeta.index = []
+        this.$set(this, 'tableMeta', this.tableMeta)
 
         this.addRow()
       })
@@ -619,6 +626,10 @@ export default class App extends Vue {
   }
 
   async renameTable (newName: string, oldName: string) {
+    if (newName === oldName) {
+      return
+    }
+
     if (this.tableName === oldName) {
       this.checkCommit(async () => {
         await api.patch('/api/table/rename', undefined, {
@@ -730,14 +741,12 @@ export default class App extends Vue {
       }
     ]
 
-    dotProp.set(this.editList, `col.${name}`, {
-      type: 'TEXT'
-    })
+    dotProp.set(this.editList, `col.${name}.type`, 'TEXT')
     this.$set(this, 'editList', this.editList)
   }
 
   renameCol (name: string, oldName: string) {
-    if (!name.trim()) {
+    if (!name.trim() || name === oldName) {
       return
     }
 
@@ -880,6 +889,24 @@ export default class App extends Vue {
     this.reset()
   }
 
+  setTableSettings (s: { meta: any, table: any }) {
+    this.tableMeta = s.table
+    dotProp.set(this.dbMeta, 'table', s.meta)
+
+    this.$set(this, 'tableMeta', this.tableMeta)
+    this.$set(this, 'dbMeta', this.dbMeta)
+  }
+
+  setColSettings (s: { meta: any, table: any }) {
+    this.tableMeta = s.table
+    if (Object.keys(s.meta).length > 0) {
+      dotProp.set(this.dbMeta, `col.${this.selectedField}`, s.meta)
+    }
+
+    this.$set(this, 'tableMeta', this.tableMeta)
+    this.$set(this, 'dbMeta', this.dbMeta)
+  }
+
   openFile () {
     this.checkCommit(async () => {
       const r = await remote.dialog.showOpenDialog({
@@ -982,7 +1009,7 @@ body {
 
 .v-context {
   li.is-active {
-    background-color: aliceblue;
+    background-color: rgb(221, 239, 255);
   }
 
   .v-context__sub {
